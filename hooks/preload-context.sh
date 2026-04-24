@@ -18,7 +18,9 @@ except Exception:
     print('')
 " 2>/dev/null) || true
 
-if ! echo "$prompt" | grep -qE '^/(impl|vuln|upgrade)'; then
+# Require at least one non-whitespace argument so bare `/impl` (or `/impl --help`
+# parsed before a real description) doesn't inject noise every misfire.
+if ! echo "$prompt" | grep -qE '^/(impl|vuln|upgrade)[[:space:]]+[^[:space:]-]'; then
     exit 0
 fi
 

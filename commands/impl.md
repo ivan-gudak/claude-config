@@ -106,7 +106,14 @@ Once the file map is returned, delegate planning to Opus:
   >
   > Produce a risk-weighted plan per your skill."
 
-**Wait for the risk-planner to return.** Its output is the plan. Present it to the user verbatim and ask:
+**Wait for the risk-planner to return.** Its output is one of:
+
+1. A full plan in the risk-weighted format (the normal case).
+2. A short `### Re-classification` section, if the planner decided on inspection that the task is actually `SIMPLE` or `MODERATE`.
+
+**If the return contains `### Re-classification`:** surface it to the user, ask for confirmation of the revised level with a `choices` prompt (`["Accept revised classification (Recommended)", "Override and stay SIGNIFICANT/HIGH-RISK", "Cancel"]`). If the user accepts, **fall back to Phase 2A** (standard plan) using the Explore summary already captured above — do not re-run Explore. If the user overrides, re-invoke risk-planner with an additional constraint stating the classification is intentional; do not down-classify again. If the user cancels, stop and summarize.
+
+**If the return is a full plan:** present it to the user verbatim and ask:
 
 ```
 "Opus-planned. What would you like to do?"
@@ -114,7 +121,7 @@ choices: ["Approve & implement now (Recommended)", "Revise plan", "Cancel"]
 ```
 
 - **Approve** → proceed to Phase 3B
-- **Revise** → ask what to change, re-invoke risk-planner with the additional constraint, re-show, re-ask
+- **Revise** → ask what to change, then re-invoke risk-planner with the **complete** brief plus the additional constraint merged in (never send just a delta — the planner refuses to plan without a full brief). Re-show, re-ask.
 - **Cancel** → stop and summarize
 
 ---
@@ -154,13 +161,14 @@ Use the currently selected model or Sonnet for implementation itself. Opus is re
      >
      > Produce an Opus code review per your skill."
 
-7. Act on the verdict:
+7. Act on the return:
+   - **`### Re-classification` section** — the reviewer decided the change is actually `SIMPLE` or `MODERATE` on inspection. Surface it to the user and ask `choices: ["Accept revised classification (Recommended)", "Override and keep the BLOCK-gated review", "Cancel"]`. If accepted, treat the review as an implicit PASS: skip the BLOCK branch, proceed to step 8, and do NOT re-invoke the reviewer on later fix deltas. Record the revised classification for the Phase 5 report. If overridden, re-invoke code-review with an explicit note that the classification is intentional.
    - **BLOCK** — fix the blocking findings with the current model or Sonnet. Re-run the Opus review with the updated diff. Do not run tests until the verdict is not BLOCK.
    - **PASS WITH RECOMMENDATIONS** — apply any MAJOR findings in the same change before running tests. MINOR / NIT findings may be deferred — note them in the Phase 5 report.
    - **PASS** — proceed.
 8. Run relevant linters, builds, and tests.
 9. Fix any failures caused by your changes (current model or Sonnet).
-10. If fixes were applied, re-run tests. If the fixes were non-trivial, re-invoke the Opus review on the delta.
+10. If fixes were applied, re-run tests. If the fixes were non-trivial and the reviewer was NOT down-classified in step 7, re-invoke the Opus review on the delta. If the reviewer WAS down-classified, skip the re-review.
 11. Verify the outcome matches the approved plan and the review verdict.
 12. Proceed to Phase 4.
 

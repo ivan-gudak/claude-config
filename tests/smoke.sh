@@ -226,6 +226,10 @@ assert_symlink "$FAKE_CLAUDE/commands/impl.md" "--no-plugin keeps commands/impl.
 for hook in notify-done.sh preload-context.sh test-notify.sh; do
     assert_symlink "$FAKE_CLAUDE/hooks/$hook" "--no-plugin keeps hooks/$hook"
 done
+# Regression guard: --no-plugin must NOT touch hook entries in settings.json.
+assert_settings_has_hook "notify-done.sh"    "--no-plugin keeps notify-done in settings.json"
+assert_settings_has_hook "preload-context.sh" "--no-plugin keeps preload-context in settings.json"
+assert_settings_has_hook "test-notify.sh"    "--no-plugin keeps test-notify in settings.json"
 
 # ── Uninstall ────────────────────────────────────────────────────────────────
 section "Uninstall"

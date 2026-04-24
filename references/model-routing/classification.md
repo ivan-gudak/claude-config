@@ -28,7 +28,7 @@ stays on the currently selected model.
 - broad refactoring across multiple modules
 - concurrency, caching, transactions, async processing
 - payment, billing, audit, compliance, or security-sensitive logic
-- changes touching more than 3-5 non-test files
+- changes touching 4 or more non-test files
 - unclear requirements or high blast radius
 
 ## Classify as SIMPLE / MODERATE if
@@ -38,7 +38,7 @@ stays on the currently selected model.
 - a dependency bump contained within the current major version with no
   consumer-code changes required
 - a refactor kept to a single file or closely related cluster
-- fewer than 3-5 non-test files changed
+- 3 or fewer non-test files changed
 
 When in doubt between MODERATE and SIGNIFICANT, pick SIGNIFICANT and use Opus.
 

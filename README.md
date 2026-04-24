@@ -193,11 +193,12 @@ Upgrade libraries, runtimes, build tools, or GitHub Actions with compatibility c
 ```
 ## Upgrade Summary
 
-| Component  | Before | After  | Status  | Notes                       |
-|------------|--------|--------|---------|-----------------------------|
-| springboot | 3.1.4  | 3.3.11 | OK      | Also upgraded hibernate 6.4 |
-| java       | 17     | 21     | OK      | Updated 2 test files        |
-| redis      | -      | -      | SKIPPED | Not found in project        |
+| Component    | Before | After  | Class       | Review       | Status  | Notes                       |
+|--------------|--------|--------|-------------|--------------|---------|-----------------------------|
+| springboot   | 3.1.4  | 3.3.11 | HIGH-RISK   | PASS         | OK      | Also upgraded hibernate 6.4 |
+| java         | 17     | 21     | SIGNIFICANT | PASS W/RECS  | OK      | Updated 2 test files        |
+| commons-text | 1.10   | 1.11   | MODERATE    | N/A          | OK      |                             |
+| redis        | -      | -      | -           | -            | SKIPPED | Not found in project        |
 
 Tests: 142 passed, 0 regressions (baseline: 142 passing)
 ```

@@ -51,11 +51,12 @@ Refuse to review without a diff - ask the caller to produce one.
 
 If, after reading the diff, you conclude the task does NOT actually meet the
 SIGNIFICANT / HIGH-RISK criteria from
-`references/model-routing/classification.md` (for example: the diff is a
-one-line config tweak that the caller over-classified), return a short
-`### Re-classification` section INSTEAD of the full dimension-by-dimension
-report. State the level you would assign and the reason. The caller will
-drop out of the Opus-gated path.
+`~/.claude/claude-config/references/model-routing/classification.md` (absolute
+path — your working directory is the caller's project, not this repo; use
+`Read` to open the file if needed), return a short `### Re-classification`
+section INSTEAD of the full dimension-by-dimension report. State the level
+you would assign and the reason. The caller will drop out of the Opus-gated
+path.
 
 Only use this when the over-classification is clear. When in doubt, run the
 full review.

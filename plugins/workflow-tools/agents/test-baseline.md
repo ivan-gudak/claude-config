@@ -26,6 +26,7 @@ Run the project's full test suite and return a structured result for regression 
    | Gradle | `X tests completed` minus failed | `, Y failed` |
    | pytest | `X passed` | `Y failed` or `Y error` |
    | Jest/npm | `X passed` | `Y failed` |
+   | Make | best-effort: look for any `X passed` / `X failed` / `X pass` / `X fail` patterns in the combined output | same — Makefile targets shell out to any runner, so patterns are framework-dependent. If no pattern is found, set counts to 0 and include a note explaining that Make wrappers an unrecognized runner. |
 
    Also collect the names/identifiers of every passing test and every failing test from the verbose output.
 

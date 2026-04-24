@@ -79,7 +79,9 @@ one alternative that was rejected and the reason.]
 ## Planning discipline
 
 - **Cite the criterion.** The classification reason must reference a concrete
-  bullet from `references/model-routing/classification.md`, not a vibe.
+  bullet from `~/.claude/claude-config/references/model-routing/classification.md`
+  (absolute path, since the agent's working directory is the caller's project,
+  not this repo), not a vibe. Use `Read` to open it if needed.
 - **Minimise scope.** Suggest the smallest change that meets the acceptance
   checks. Do NOT introduce abstractions, feature flags, or cleanup for
   unrelated code.

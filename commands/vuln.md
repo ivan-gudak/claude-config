@@ -85,7 +85,9 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
      >
      > Produce a risk-weighted plan per your skill. Before writing the plan, grep the repo for import sites and usage patterns of this library to understand the blast radius of a version bump / API change."
 
-   Present the plan to the user and ask for approval before touching files.
+   **If the risk-planner returns a `### Re-classification` section** instead of a full plan (it decided the CVE fix is actually `MODERATE` on inspection — e.g. a drop-in patch bump with no consumer-code change), surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep HIGH-RISK path", "Cancel"]`. If accepted, fall back to the MODERATE path for this CVE. If overridden, re-invoke with the complete brief plus a note that the classification is intentional. Do not send a delta-only re-invocation.
+
+   Otherwise, present the plan to the user and ask for approval before touching files.
 
 2. **Apply the fix** — With current model or Sonnet. Version bump + any code changes per the plan. No tests yet.
 
@@ -100,7 +102,8 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
      >
      > Produce an Opus code review per your skill. Focus especially on security, dependency risk, migration (library API changes), and rollback."
 
-4. **Act on the verdict:**
+4. **Act on the return:**
+   - **`### Re-classification` section** — the reviewer decided the change is actually `MODERATE`. Surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel"]`. If accepted, treat as an implicit PASS and proceed to step 5; do NOT re-invoke code-review on fix deltas. Record the revised classification for the PR body.
    - **BLOCK** — fix the blocking findings (current model or Sonnet), re-capture the diff, re-run the review. Do not run tests until the verdict is not BLOCK.
    - **PASS WITH RECOMMENDATIONS** — apply MAJOR findings before running tests. MINOR / NIT may be deferred; note them in the PR description.
    - **PASS** — proceed.
@@ -110,7 +113,7 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 6. **Compare** — Diff before/after against the baseline:
    - All previously-green tests must stay green
    - If previously-green tests fail: present them clearly and ask the user to choose — proceed anyway, revert, or investigate further
-   - If fixes were applied in response to failures, re-run tests; if the fixes were non-trivial, re-invoke the Opus review on the delta.
+   - If fixes were applied in response to failures, re-run tests; if the fixes were non-trivial AND the reviewer was NOT down-classified in step 4, re-invoke the Opus review on the delta. If it was down-classified, skip the re-review.
 
 7. **Commit & PR** — See the Git Workflow section. Include the review verdict in the PR body.
 

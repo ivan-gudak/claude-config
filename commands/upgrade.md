@@ -75,7 +75,9 @@ All changes are left **uncommitted** on the current branch.
      >
      > Produce a risk-weighted plan per your skill. Before writing the plan, grep the repo for import sites and usage patterns of this component to understand the blast radius. Pay particular attention to: breaking API changes, migration order, test coverage of usage sites, rollback."
 
-   Present each Opus plan to the user for approval before proceeding to that component.
+   **If the risk-planner returns a `### Re-classification` section** for any component (planner decided on inspection the upgrade is actually `MODERATE`), surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep SIGNIFICANT/HIGH-RISK path", "Cancel component"]`. If accepted, drop that component to the MODERATE path for Phase 2 (standard apply → build → test with no Opus review gate). If overridden, re-invoke with the complete brief plus a note that the classification is intentional. Do not send a delta-only re-invocation.
+
+   Otherwise, present each Opus plan to the user for approval before proceeding to that component.
 
 ### Version Resolution
 
@@ -119,7 +121,8 @@ Process components **one at a time** in order:
         > Project root: [absolute path]
         >
         > Produce an Opus code review per your skill. Focus on: migration order, breaking API changes, missed usage sites, dependency risk, rollback."
-   c. Act on the verdict:
+   c. Act on the return:
+      - **`### Re-classification` section** — reviewer decided this component is actually `MODERATE`. Surface it, ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel component"]`. If accepted, drop this component to the MODERATE path — treat as implicit PASS, proceed to step 7, skip the re-review on later fix deltas. Record the revised classification for the summary table.
       - **BLOCK** — fix the blocking findings (current model or Sonnet), re-capture the diff, re-run the review. Do NOT proceed to step 7 until verdict is not BLOCK.
       - **PASS WITH RECOMMENDATIONS** — apply MAJOR findings in the same change before running tests; MINOR / NIT may be deferred.
       - **PASS** — proceed.
@@ -128,7 +131,7 @@ Process components **one at a time** in order:
 
 8. **Test** — Run full test suite.
 
-9. **Compare** — Every previously-green test must still be green. If failures: see "Handling test failures". If fixes were applied and the component was SIGNIFICANT / HIGH-RISK, re-invoke the Opus code review on the delta before re-running tests.
+9. **Compare** — Every previously-green test must still be green. If failures: see "Handling test failures". If fixes were applied and the component was STILL classified SIGNIFICANT / HIGH-RISK after step 6 (i.e. was NOT down-classified by the reviewer), re-invoke the Opus code review on the delta before re-running tests. If it was down-classified, skip the re-review.
 
 After all components: print the summary table (Output section).
 
