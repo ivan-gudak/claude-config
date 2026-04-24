@@ -7,8 +7,22 @@ Versions follow semver at the **repo** level — individual plugin versions are 
 ## [Unreleased]
 
 ### Added
+- **Model routing across `/impl`, `/vuln`, `/upgrade`.** Every command now classifies the task as `SIMPLE`, `MODERATE`, `SIGNIFICANT`, or `HIGH-RISK` before planning. `SIMPLE` / `MODERATE` continue on the currently selected model. `SIGNIFICANT` / `HIGH-RISK` route planning and post-implementation review through Opus (two new plugin agents) and gate the test run on the review verdict.
+- **`plugins/workflow-tools/skills/risk-planner.md`** — new Opus-backed risk-weighted planner. Returns a structured plan with explicit security, migration, API-stability, concurrency, dependency, rollback, and test-adequacy sections. Refuses to run without a classification.
+- **`plugins/workflow-tools/skills/code-review.md`** — new Opus-backed post-implementation reviewer. Checks eight dimensions (correctness, security, architecture, edge cases, migration risks, dependency risks, test adequacy, rollback). Returns `PASS` / `PASS WITH RECOMMENDATIONS` / `BLOCK`. `BLOCK` gates the test run.
+- **`plugin.json` v1.1.0** — registers both new agents with `"model": "opus"`. `test-baseline` is unchanged.
+- **`references/model-routing/classification.md`** — single source of truth for the four complexity levels, the triggers, the routing rules, and the eight review dimensions. All three commands link to it.
+- **`tests/smoke.sh`** — install → uninstall → install smoke test in a throwaway `HOME`. Covers the full install, the subtractive `--no-hooks` / `--no-plugin` paths, `uninstall.sh`, and JSON validity of `plugin.json` + `settings-additions.json`.
 - **`uninstall.ps1`** — native Windows uninstaller (PowerShell). Mirrors `uninstall.sh`: removes managed symlinks/copies and strips hook entries from `settings.json` if Python is available.
 - **`.gitignore`** — added `settings.local.json`, `settings-local.json`, `.claude/settings.local.json` to prevent accidental commit of Claude Code machine-specific overrides.
+
+### Changed in commands
+- **`/impl`** — new Phase 1.5 classification step; `SIGNIFICANT` / `HIGH-RISK` plans go through `workflow-tools:risk-planner`, implementation stays on the current model or Sonnet, then `workflow-tools:code-review` runs before tests. Phase 4/5 now include the classification and the review verdict.
+- **`/vuln`** — step 5 classifies each CVE based on the actual change required (same-major patch/minor bump → `MODERATE`; major bump or API-break → `SIGNIFICANT` / `HIGH-RISK`). `MODERATE` keeps the existing flow; `SIGNIFICANT` / `HIGH-RISK` delegate planning to Opus, review the fix with Opus, and gate tests on the verdict. Classification is included in the commit message and PR body.
+- **`/upgrade`** — Phase 1 step 5 classifies each component. `MODERATE` components follow the existing apply → build → test path. `SIGNIFICANT` / `HIGH-RISK` components plan with Opus (Phase 1 step 8) and get an Opus review before build/test (Phase 2 step 6). The summary table gains `Class` and `Review` columns.
+
+### Changed in hooks
+- **`preload-context.sh`** — injects a one-line model-routing reminder before the existing git context for `/impl`, `/vuln`, `/upgrade`. Points at `references/model-routing/classification.md` so the rules are one read away.
 
 ### Changed
 - **`install.sh --no-hooks` / `--no-plugin` now actively remove** previously-installed components rather than silently leaving them in place. Running `install.sh --no-hooks` after a full install removes the hook symlinks and strips the hook entries from `settings.json`. This matches what users expect from the flag name.

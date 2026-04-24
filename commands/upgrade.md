@@ -8,6 +8,7 @@ Reference files (read when needed):
 - Ecosystem detection and update commands: `~/.claude/claude-config/references/upgrade/ecosystems.md`
 - LTS lookup sources: `~/.claude/claude-config/references/upgrade/lts-sources.md`
 - Compatibility constraints: `~/.claude/claude-config/references/upgrade/compatibility.md`
+- Model routing: `~/.claude/claude-config/references/model-routing/classification.md`
 
 All changes are left **uncommitted** on the current branch.
 
@@ -35,7 +36,25 @@ All changes are left **uncommitted** on the current branch.
 
 4. **Compatibility check** — Review the Agent A output for breaking changes and incompatibilities; if any, apply the conflict resolution logic below.
 
-5. **Detect conflicts** — If any incompatibility is found, do NOT proceed. Instead:
+5. **Classify each component** — Apply `references/model-routing/classification.md` to each component in this upgrade set. Use the actual change required, not the component's popularity or size.
+
+   | Condition on the upgrade | Classification |
+   |---|---|
+   | Same-major version bump, no documented breaking changes, no companion upgrades required | `MODERATE` |
+   | GitHub Actions `uses:` bumps (Agent B's output) | `MODERATE` (en bloc) |
+   | Major version bump, OR breaking changes flagged by Agent A, OR companion upgrades required, OR runtime (Java/Node/Python) upgrade, OR build-tool (Maven/Gradle/npm) upgrade | `SIGNIFICANT` / `HIGH-RISK` |
+   | Any upgrade that touches security-sensitive code paths (auth, crypto, session, payment), migration logic, or framework-level components (Spring Boot, Rails, Next.js) | `HIGH-RISK` |
+
+   If unsure, err toward `SIGNIFICANT`.
+
+   Print a classification line per component:
+   ```
+   springboot 3.1.4 → 3.3.11: HIGH-RISK (framework major-minor bump, companion upgrades required)
+   java 17 → 21: SIGNIFICANT (runtime major bump)
+   commons-text 1.10.0 → 1.11.0: MODERATE (same-major, no breaking changes)
+   ```
+
+6. **Detect conflicts** — If any incompatibility is found, do NOT proceed. Instead:
    - Explain the conflict clearly (e.g. "Gradle 9 requires Java 17+, but the repo uses Java 11")
    - Offer concrete, ranked alternatives:
      - **Option A** — Lower the conflicting component to the highest compatible version
@@ -43,7 +62,20 @@ All changes are left **uncommitted** on the current branch.
      - **Option C** — Skip this component
    - Ask the user to choose before continuing
 
-6. **Confirm plan** — Before making any changes, print the upgrade plan and ask for confirmation if any version was auto-adjusted or companion upgrades were added.
+7. **Confirm plan** — Before making any changes, print the upgrade plan (including per-component classification) and ask for confirmation if any version was auto-adjusted or companion upgrades were added.
+
+8. **Opus planning for SIGNIFICANT / HIGH-RISK components** — After the user confirms the overall plan, for every component flagged `SIGNIFICANT` or `HIGH-RISK`, delegate its detailed plan to `workflow-tools:risk-planner`:
+
+   → Agent (subagent_type: "workflow-tools:risk-planner"):
+     > "Task description: Upgrade [component] from [current version] to [target version] in this repo.
+     > Classification: [SIGNIFICANT | HIGH-RISK] — reason: [the criterion from step 5]
+     > Codebase summary: [paste inventory + usage-site summary for this component]
+     > Constraints: [companion upgrades required; runtime version; any compatibility notes from Agent A]
+     > Current state: branch = [git branch], uncommitted = [git status --short summary]
+     >
+     > Produce a risk-weighted plan per your skill. Pay particular attention to: breaking API changes, migration order, test coverage of usage sites, rollback."
+
+   Present each Opus plan to the user for approval before proceeding to that component.
 
 ### Version Resolution
 
@@ -62,14 +94,43 @@ All changes are left **uncommitted** on the current branch.
 Process components **one at a time** in order:
 
 1. **Baseline tests** (first component only) — Use the Agent tool with `subagent_type "workflow-tools:test-baseline"`. Pass the project root as context. Store the returned baseline; reuse for all subsequent component comparisons. Do not re-run the baseline for subsequent components — use the counts captured here for all comparisons throughout Phase 2.
+
 2. **Detect** — Find the component. See `ecosystems.md`. If not found, warn and skip.
+
 3. **Plan changes** — Identify all files that must change (build files, lock files, wrapper scripts, config, Docker base images, CI YAML — excluding `.github/workflows/` action refs already updated by Agent B in Phase 1).
+
 4. **Apply** — Make the changes per `ecosystems.md` update commands.
+
 5. **Companion upgrades** — Apply automatically and note in summary (e.g. Spring Boot major bump may require Hibernate, Mockito).
-6. **Build** — Run the build command (no tests yet). If build fails, see "Handling build failures".
-7. **Test** — Run full test suite again.
-8. **Compare** — Every previously-green test must still be green. If failures: see "Handling test failures".
-9. After all components: print summary table.
+
+6. **Branch on classification:**
+
+   **MODERATE components** → go to step 7 directly (build, then test).
+
+   **SIGNIFICANT / HIGH-RISK components** → perform an Opus code review BEFORE building/testing:
+
+   a. Capture the `git diff` for this component (and the companion-upgrade diffs applied in step 5).
+   b. Spawn the reviewer:
+      → Agent (subagent_type: "workflow-tools:code-review"):
+        > "Task description: Upgrade [component] from [current] to [target] and any companion upgrades applied alongside it.
+        > Classification: [SIGNIFICANT | HIGH-RISK]
+        > Plan: [paste the Opus plan approved in Phase 1 step 8]
+        > Diff: [paste git diff]
+        > Project root: [absolute path]
+        >
+        > Produce an Opus code review per your skill. Focus on: migration order, breaking API changes, missed usage sites, dependency risk, rollback."
+   c. Act on the verdict:
+      - **BLOCK** — fix the blocking findings (current model or Sonnet), re-capture the diff, re-run the review. Do NOT proceed to step 7 until verdict is not BLOCK.
+      - **PASS WITH RECOMMENDATIONS** — apply MAJOR findings in the same change before running tests; MINOR / NIT may be deferred.
+      - **PASS** — proceed.
+
+7. **Build** — Run the build command (no tests yet). If build fails, see "Handling build failures".
+
+8. **Test** — Run full test suite.
+
+9. **Compare** — Every previously-green test must still be green. If failures: see "Handling test failures". If fixes were applied and the component was SIGNIFICANT / HIGH-RISK, re-invoke the Opus code review on the delta before re-running tests.
+
+After all components: print the summary table (Output section).
 
 ### Handling Test Failures
 
@@ -91,11 +152,22 @@ Process components **one at a time** in order:
 ```
 ## Upgrade Summary
 
-| Component  | Before | After  | Status  | Notes                       |
-|------------|--------|--------|---------|-----------------------------|
-| springboot | 3.1.4  | 3.3.11 | OK      | Also upgraded hibernate 6.4 |
-| java       | 17     | 21     | OK      | Updated 2 test files        |
-| redis      | -      | -      | SKIPPED | Not found in project        |
+| Component  | Before | After  | Class       | Review | Status  | Notes                       |
+|------------|--------|--------|-------------|--------|---------|-----------------------------|
+| springboot | 3.1.4  | 3.3.11 | HIGH-RISK   | PASS   | OK      | Also upgraded hibernate 6.4 |
+| java       | 17     | 21     | SIGNIFICANT | PASS W/RECS | OK | Updated 2 test files        |
+| commons-text | 1.10 | 1.11   | MODERATE    | N/A    | OK      |                             |
+| redis      | -      | -      | -           | -      | SKIPPED | Not found in project        |
 
 Tests: 142 passed, 0 regressions (baseline: 142 passing)
 ```
+
+---
+
+## Invariants (always enforced)
+
+- NEVER skip per-component classification in Phase 1 step 5
+- NEVER use Opus for a MODERATE component upgrade unless the user explicitly requests it
+- NEVER run tests on a SIGNIFICANT / HIGH-RISK component before the Opus code review returns a non-BLOCK verdict
+- ALWAYS include the classification column in the final summary table
+- ALWAYS compare against the Baseline agent's results captured once at the start of Phase 2

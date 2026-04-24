@@ -23,6 +23,10 @@ if ! echo "$prompt" | grep -qE '^/(impl|vuln|upgrade)'; then
 fi
 
 echo "=== Auto-injected project context ==="
+echo "Model routing: classify task as SIMPLE / MODERATE / SIGNIFICANT / HIGH-RISK before planning."
+echo "  SIGNIFICANT / HIGH-RISK -> plan with workflow-tools:risk-planner (Opus),"
+echo "  then code-review with workflow-tools:code-review (Opus) BEFORE running tests."
+echo "  Full rules: ~/.claude/claude-config/references/model-routing/classification.md"
 if git rev-parse --git-dir > /dev/null 2>&1; then
     echo "Branch: $(git branch --show-current 2>/dev/null || echo 'unknown')"
     echo "Status:"

@@ -9,9 +9,11 @@ Shared Claude Code configuration: custom commands, workflow plugins, and hooks.
 | `commands/impl.md` | `/impl` — structured implementation workflow with subagent optimisation |
 | `commands/vuln.md` | `/vuln` — CVE fix workflow with parallel research subagents |
 | `commands/upgrade.md` | `/upgrade` — dependency upgrade workflow with parallel compatibility research |
-| `plugins/workflow-tools/` | `workflow-tools:test-baseline` — shared test-baseline agent (reuse in any command) |
+| `plugins/workflow-tools/` | Shared plugin agents: `workflow-tools:test-baseline`, `workflow-tools:risk-planner` (Opus), `workflow-tools:code-review` (Opus) |
 | `references/fix-vuln/` | Reference docs used by `/vuln` — build-system detection, NVD API usage |
 | `references/upgrade/` | Reference docs used by `/upgrade` — ecosystem rules, LTS sources, compatibility constraints |
+| `references/model-routing/classification.md` | Shared task-complexity criteria and Opus-routing rules used by all three commands |
+| `tests/smoke.sh` | Install → uninstall → install smoke test in a throwaway `HOME` |
 | `hooks/notify-done.sh` | Desktop notification when Claude finishes a turn |
 | `hooks/preload-context.sh` | Auto-injects git context when you submit /impl, /vuln, or /upgrade |
 | `hooks/test-notify.sh` | Desktop notification with pass/fail count after every test suite run |
@@ -204,6 +206,43 @@ Tests: 142 passed, 0 regressions (baseline: 142 passing)
 
 ---
 
+## Model routing (SIMPLE / MODERATE / SIGNIFICANT / HIGH-RISK)
+
+All three commands classify the task up front and route Opus to the steps that
+actually benefit from deeper reasoning. Routine implementation stays on the
+currently selected model.
+
+| Level | Trigger | What runs on Opus |
+|-------|---------|-------------------|
+| `SIMPLE` | Local change, trivial scope | Nothing — current model throughout |
+| `MODERATE` | Bounded scope, few files, clear requirements, same-major dependency bump, no code-change API breaks | Nothing — current model throughout |
+| `SIGNIFICANT` | Major bump, breaking API changes, runtime/build-tool upgrades, multi-module refactor, 3-5+ non-test files, unclear requirements | Planning (`workflow-tools:risk-planner`) + post-implementation review (`workflow-tools:code-review`) |
+| `HIGH-RISK` | Auth / sessions / permissions, DB schema or migrations, public API changes, concurrency, payment / compliance / security-sensitive logic | Same as SIGNIFICANT; the review is held to a higher bar on security, migration, and rollback |
+
+**Workflow for SIGNIFICANT / HIGH-RISK:**
+
+1. Classify task complexity (output the level with a reason).
+2. Plan with Opus via `workflow-tools:risk-planner`.
+3. Implement with the currently selected model or Sonnet.
+4. Opus code review via `workflow-tools:code-review` — **before tests run**.
+5. Run tests.
+6. Fix issues flagged by the review or failing tests (current model / Sonnet).
+7. Re-run tests if fixes were applied.
+8. Produce the final summary (classification, verdict, test deltas, deferred items).
+
+The Opus review checks eight dimensions: correctness, security impact,
+architectural consistency, missed edge cases, migration risks, dependency
+risks, test adequacy, rollback considerations. It returns `PASS`,
+`PASS WITH RECOMMENDATIONS`, or `BLOCK`. `BLOCK` gates the test run.
+
+Full rules and per-command branching: `references/model-routing/classification.md`.
+
+**Never** runs Opus for routine implementation unless explicitly requested. The
+implementation step on SIGNIFICANT / HIGH-RISK work is deliberately kept on
+Sonnet / the current model — Opus is reserved for planning and review.
+
+---
+
 ## Plugin agent: `workflow-tools:test-baseline`
 
 A reusable agent used internally by `/vuln` and `/upgrade`. You can also invoke it directly from any command or custom agent.
@@ -249,6 +288,49 @@ Use the Agent tool with subagent_type "workflow-tools:test-baseline".
 Pass the project root as context. Store the returned baseline for later comparison.
 ```
 
+## Plugin agent: `workflow-tools:risk-planner` (Opus)
+
+Risk-weighted planner used by `/impl`, `/vuln`, and `/upgrade` when a task
+is classified `SIGNIFICANT` or `HIGH-RISK`. Runs on Claude Opus.
+
+**What it does:** given a task description, the classification, a codebase
+summary, and the current state (branch + uncommitted status), returns a
+structured plan with explicit sections for security, migration, API
+stability, concurrency, dependency blast radius, rollback story, and test
+adequacy. It refuses to run if the caller didn't supply a classification.
+
+**Use it directly:**
+
+```
+Use the Agent tool with subagent_type "workflow-tools:risk-planner".
+Pass: task description, classification, codebase summary, constraints, current state.
+Do NOT use for SIMPLE / MODERATE tasks — it's wasted context.
+```
+
+## Plugin agent: `workflow-tools:code-review` (Opus)
+
+Post-implementation code reviewer used by `/impl`, `/vuln`, and `/upgrade`
+when a task is classified `SIGNIFICANT` or `HIGH-RISK`. Runs on Claude Opus.
+
+**What it does:** takes the plan and the full `git diff`, reads each changed
+file in its surroundings, and checks eight dimensions — correctness,
+security impact, architectural consistency, missed edge cases, migration
+risks, dependency risks, test adequacy, rollback considerations. Returns a
+verdict of `PASS`, `PASS WITH RECOMMENDATIONS`, or `BLOCK`, plus findings
+labelled `BLOCKER` / `MAJOR` / `MINOR` / `NIT` with `path:line` locations.
+
+**`BLOCK` gates the test run** — the calling command does not run tests
+until a follow-up review returns a non-`BLOCK` verdict. `BLOCK` means fix
+the specific finding, re-capture the diff, re-invoke the reviewer.
+
+**Use it directly:**
+
+```
+Use the Agent tool with subagent_type "workflow-tools:code-review".
+Pass: task description, classification, approved plan, git diff, project root.
+Do NOT use for SIMPLE / MODERATE tasks.
+```
+
 ## Hooks
 
 Three hooks are active after install:
@@ -256,8 +338,28 @@ Three hooks are active after install:
 | Hook | Event | What it does |
 |------|-------|-------------|
 | `notify-done.sh` | Claude turn ends | Desktop notification (macOS: `osascript`; Linux: `notify-send`; WSL2: `wsl-notify-send` / PowerShell; fallback: bell) |
-| `preload-context.sh` | Message submitted | If message starts with `/impl`, `/vuln`, or `/upgrade`: injects git branch, status, and recent commits before Claude starts |
+| `preload-context.sh` | Message submitted | If message starts with `/impl`, `/vuln`, or `/upgrade`: injects the model-routing reminder plus git branch, status, and recent commits before Claude starts |
 | `test-notify.sh` | After every Bash call | If the command was a test runner (`mvn test`, `gradle test`, `npm test`, `pytest`, `make test`): sends notification with pass/fail count |
+
+## Development / testing
+
+There is no application test suite. End-to-end behaviour is verified with a
+smoke test that exercises the installer in a throwaway `HOME`:
+
+```bash
+bash tests/smoke.sh
+```
+
+The test covers:
+
+- Full install (commands, plugin, hooks, `settings.json` merge)
+- Subtractive flags: `--no-hooks` removes previously-installed hooks and strips
+  `settings.json` entries; `--no-plugin` removes the plugin symlink
+- `uninstall.sh` removes managed symlinks and strips hook entries
+- `plugin.json` and `settings-additions.json` parse as JSON
+
+Run it after any change to `install.sh`, `uninstall.sh`,
+`settings-additions.json`, or the plugin manifest.
 
 ## Docker / AI containers
 
