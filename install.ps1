@@ -1,4 +1,4 @@
-# install.ps1 — native Windows installer for claude-config.
+# install.ps1 - native Windows installer for claude-config.
 #
 # Symlinks require either Developer Mode (Settings > For developers)
 # or running PowerShell as Administrator. If symlink creation fails,
@@ -41,18 +41,18 @@ Expected setup:
 }
 
 Write-Host "Installing claude-config from $ScriptDir"
-if ($UseCopy)   { Write-Host "  (using file copy — symlinks disabled)" }
-if ($NoPlugin)  { Write-Host "  (plugin skipped — -NoPlugin)" }
-Write-Host "  (hooks are not installed on native Windows — use WSL2 for hook support)"
+if ($UseCopy)   { Write-Host "  (using file copy - symlinks disabled)" }
+if ($NoPlugin)  { Write-Host "  (plugin skipped - -NoPlugin)" }
+Write-Host "  (hooks are not installed on native Windows - use WSL2 for hook support)"
 
-# ── Ensure target directories exist ───────────────────────────────────────────
+# -- Ensure target directories exist -------------------------------------------
 
 $CommandsDir = Join-Path $ClaudeDir 'commands'
 $PluginsDir  = Join-Path $ClaudeDir 'plugins'
 New-Item -ItemType Directory -Force -Path $CommandsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $PluginsDir  | Out-Null
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers -------------------------------------------------------------------
 
 function Install-FileLink {
     param(
@@ -75,7 +75,7 @@ function Install-FileLink {
     } catch {
         # Fall back to copy if symlink creation isn't permitted
         Copy-Item -Path $Target -Destination $LinkPath -Force
-        Write-Host "  copied $LinkPath (symlink failed — Developer Mode or admin required)"
+        Write-Host "  copied $LinkPath (symlink failed - Developer Mode or admin required)"
     }
 }
 
@@ -98,11 +98,11 @@ function Install-DirectoryLink {
         Write-Host "  linked $LinkPath (directory)"
     } catch {
         Copy-Item -Path $Target -Destination $LinkPath -Recurse -Force
-        Write-Host "  copied $LinkPath (directory — symlink failed)"
+        Write-Host "  copied $LinkPath (directory - symlink failed)"
     }
 }
 
-# ── Install commands ──────────────────────────────────────────────────────────
+# -- Install commands ----------------------------------------------------------
 
 foreach ($cmd in @('impl.md', 'vuln.md', 'upgrade.md')) {
     $src = Join-Path $ScriptDir "commands\$cmd"
@@ -110,7 +110,7 @@ foreach ($cmd in @('impl.md', 'vuln.md', 'upgrade.md')) {
     Install-FileLink -Target $src -LinkPath $dst
 }
 
-# ── Install plugin ────────────────────────────────────────────────────────────
+# -- Install plugin ------------------------------------------------------------
 
 if (-not $NoPlugin) {
     $pluginSrc = Join-Path $ScriptDir 'plugins\workflow-tools'

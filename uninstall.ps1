@@ -1,4 +1,4 @@
-# uninstall.ps1 — reverse of install.ps1 for native Windows.
+# uninstall.ps1 - reverse of install.ps1 for native Windows.
 #
 # Removes managed symlinks (or copies) and strips our hook entries from
 # settings.json if any are present. Idempotent: safe to re-run.
@@ -27,9 +27,9 @@ uninstall.ps1 must run from within $ExpectedClaudeDir\claude-config\
 
 Write-Host "Uninstalling claude-config from $ClaudeDir"
 
-# ── Remove managed items (symlinks OR copied files/dirs) ──────────────────────
+# -- Remove managed items (symlinks OR copied files/dirs) ----------------------
 # For symlinks: only remove if the target points into claude-config/.
-# For copies (non-symlinks): always remove — they only exist because we put them there.
+# For copies (non-symlinks): always remove - they only exist because we put them there.
 
 function Remove-IfOurs {
     param([string]$Path)
@@ -53,7 +53,7 @@ function Remove-IfOurs {
             Write-Host "  skipped $Path (symlink points outside claude-config)"
         }
     } else {
-        # Non-symlink — it's a copy install.ps1 made. Safe to remove.
+        # Non-symlink - it's a copy install.ps1 made. Safe to remove.
         Remove-Item $Path -Recurse -Force
         Write-Host "  removed $Path (copy)"
     }
@@ -65,24 +65,24 @@ foreach ($cmd in @('impl.md', 'vuln.md', 'upgrade.md')) {
 
 Remove-IfOurs (Join-Path $ClaudeDir 'plugins\workflow-tools')
 
-# ── Hook symlinks shouldn't exist on native Windows (install.ps1 skips them),
-# ── but clean up defensively in case install.sh was run via WSL2 previously.
+# -- Hook symlinks shouldn't exist on native Windows (install.ps1 skips them),
+# -- but clean up defensively in case install.sh was run via WSL2 previously.
 
 foreach ($hook in @('notify-done.sh', 'preload-context.sh', 'test-notify.sh')) {
     $hookPath = Join-Path $ClaudeDir "hooks\$hook"
     if (Test-Path $hookPath) { Remove-IfOurs $hookPath }
 }
 
-# ── Strip hook entries from settings.json (only if Python is available) ───────
+# -- Strip hook entries from settings.json (only if Python is available) -------
 
 $settingsPath = Join-Path $ClaudeDir 'settings.json'
 $additionsPath = Join-Path $ScriptDir 'settings-additions.json'
 
 if (-not (Test-Path $settingsPath)) {
-    Write-Host "  settings.json not found — nothing to clean up"
+    Write-Host "  settings.json not found - nothing to clean up"
 } elseif (-not (Get-Command python -ErrorAction SilentlyContinue) -and
           -not (Get-Command python3 -ErrorAction SilentlyContinue)) {
-    Write-Host "  python not found — skipping settings.json cleanup"
+    Write-Host "  python not found - skipping settings.json cleanup"
     Write-Host "  (manually remove the three hook entries added by install.sh if present)"
 } else {
     $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue
@@ -101,7 +101,7 @@ with open(additions_path) as f:
     additions = json.load(f)
 
 if "hooks" not in settings:
-    print("settings.json: no hooks section — nothing to remove")
+    print("settings.json: no hooks section - nothing to remove")
     sys.exit(0)
 
 removed = 0
