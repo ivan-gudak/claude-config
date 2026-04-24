@@ -26,9 +26,9 @@ done
 # ln -sf can create a symlink in its place.
 
 plugin_target="$CLAUDE_DIR/plugins/workflow-tools"
-if [[ -d "$plugin_target" && ! -L "$plugin_target" ]]; then
-    rm -rf "$plugin_target"
-fi
+# Remove any existing symlink or real directory so ln -sf creates a clean symlink
+# (ln -sf on a symlink-to-directory follows the link and creates inside it instead).
+rm -rf "$plugin_target"
 ln -sf "../claude-config/plugins/workflow-tools" "$plugin_target"
 printf '  linked plugins/workflow-tools\n'
 
