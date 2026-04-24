@@ -8,9 +8,15 @@ Versions follow semver at the **repo** level — individual plugin versions are 
 
 ### Added
 - **`uninstall.ps1`** — native Windows uninstaller (PowerShell). Mirrors `uninstall.sh`: removes managed symlinks/copies and strips hook entries from `settings.json` if Python is available.
+- **`.gitignore`** — added `settings.local.json`, `settings-local.json`, `.claude/settings.local.json` to prevent accidental commit of Claude Code machine-specific overrides.
 
 ### Changed
+- **`install.sh --no-hooks` / `--no-plugin` now actively remove** previously-installed components rather than silently leaving them in place. Running `install.sh --no-hooks` after a full install removes the hook symlinks and strips the hook entries from `settings.json`. This matches what users expect from the flag name.
+- **`uninstall.sh` and `uninstall.ps1` symlink matching tightened** — require a path-segment boundary (`/claude-config/` rather than a loose substring) so unrelated paths like `claude-config-backup` can't be matched.
 - **README** — surfaces the Windows installation path from the main "Install" section (previously only reachable by scrolling to the Windows section); adds the native Windows uninstall command to the Uninstall section; documents update workflow for Windows.
+
+### Fixed
+- **`install.ps1` / `uninstall.ps1`** — removed PowerShell 7+ only operators (`||`, `??`) that broke on Windows PowerShell 5.1 (the default on Windows 10/11). Replaced with PS5.1-compatible forms.
 
 ## [1.1.0] — 2026-04-24
 

@@ -41,7 +41,12 @@ function Remove-IfOurs {
 
     if ($isLink) {
         $target = $item.Target
-        if ($target -and ($target -like "*claude-config*")) {
+        # Require a path separator before or after claude-config to avoid matching
+        # e.g. "claude-config-backup". Targets may use forward or back slashes.
+        if ($target -and ($target -like "*/claude-config/*" -or
+                          $target -like "*\claude-config\*" -or
+                          $target -like "../claude-config/*" -or
+                          $target -like "..\claude-config\*")) {
             Remove-Item $Path -Recurse -Force
             Write-Host "  removed $Path (symlink)"
         } else {
@@ -80,7 +85,8 @@ if (-not (Test-Path $settingsPath)) {
     Write-Host "  python not found — skipping settings.json cleanup"
     Write-Host "  (manually remove the three hook entries added by install.sh if present)"
 } else {
-    $py = (Get-Command python3 -ErrorAction SilentlyContinue) ?? (Get-Command python)
+    $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue
+    if (-not $pyCmd) { $pyCmd = Get-Command python -ErrorAction SilentlyContinue }
 
     $pyScript = @'
 import sys, json
@@ -131,7 +137,7 @@ with open(settings_path, "w") as f:
 print(f"settings.json: {removed} hook entr{'y' if removed == 1 else 'ies'} removed")
 '@
 
-    & $py.Source -c $pyScript $settingsPath $additionsPath
+    & $pyCmd.Source -c $pyScript $settingsPath $additionsPath
 }
 
 Write-Host "Done."

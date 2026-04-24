@@ -23,7 +23,9 @@ remove_if_our_symlink() {
     if [[ -L "$link" ]]; then
         local target
         target=$(readlink "$link")
-        if [[ "$target" == *"claude-config/"* ]]; then
+        # Require a path-segment boundary so targets like "claude-config-backup/..."
+        # are not mistakenly matched.
+        if [[ "$target" == *"/claude-config/"* || "$target" == "../claude-config/"* ]]; then
             rm -f "$link"
             printf '  removed %s\n' "$link"
         else

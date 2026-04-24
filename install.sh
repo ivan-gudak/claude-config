@@ -19,14 +19,17 @@ for arg in "$@"; do
 Usage: bash install.sh [OPTIONS]
 
 Options:
-  --no-hooks    Install commands and plugin only; skip hook scripts and settings merge.
+  --no-hooks    Install commands and plugin only. If hooks were previously installed,
+                they will be ACTIVELY REMOVED (symlinks unlinked, settings.json entries stripped).
                 Use this if you don't want notifications or auto-injected git context.
-  --no-plugin   Install commands (and optionally hooks) without the workflow-tools plugin.
+  --no-plugin   Install without the workflow-tools plugin. If the plugin symlink was
+                previously installed, it will be ACTIVELY REMOVED.
                 Note: /vuln and /upgrade use workflow-tools:test-baseline, so excluding the
                 plugin will degrade those commands.
   -h, --help    Show this help.
 
-Without flags, installs everything.
+Without flags, installs everything. Re-running with different flags converges to the
+requested state — safe and idempotent either way.
 EOF
             exit 0
             ;;
@@ -75,13 +78,32 @@ done
 # If a real (non-symlink) directory exists at the target, remove it first so
 # ln -sf can create a symlink in its place.
 
+# Helper: remove a path only if it's our symlink (points into claude-config/).
+# Safe for paths that don't exist.
+remove_our_symlink() {
+    local link="$1"
+    if [[ -L "$link" ]]; then
+        local target
+        target=$(readlink "$link")
+        if [[ "$target" == *"/claude-config/"* || "$target" == "../claude-config/"* ]]; then
+            rm -rf "$link"
+            printf '  removed %s (was managed)\n' "$link"
+        fi
+    fi
+}
+
+# ── Plugin directory symlink ──────────────────────────────────────────────────
+
+plugin_target="$CLAUDE_DIR/plugins/workflow-tools"
 if [[ $install_plugin -eq 1 ]]; then
-    plugin_target="$CLAUDE_DIR/plugins/workflow-tools"
     # Remove any existing symlink or real directory so ln -sf creates a clean symlink
     # (ln -sf on a symlink-to-directory follows the link and creates inside it instead).
     rm -rf "$plugin_target"
     ln -sf "../claude-config/plugins/workflow-tools" "$plugin_target"
     printf '  linked plugins/workflow-tools\n'
+else
+    # --no-plugin: actively uninstall our managed plugin symlink if present.
+    remove_our_symlink "$plugin_target"
 fi
 
 # ── Hook script symlinks ──────────────────────────────────────────────────────
@@ -91,21 +113,29 @@ if [[ $install_hooks -eq 1 ]]; then
         ln -sf "../claude-config/hooks/$hook" "$CLAUDE_DIR/hooks/$hook"
         printf '  linked hooks/%s\n' "$hook"
     done
+else
+    # --no-hooks: actively uninstall our managed hook symlinks if present.
+    for hook in notify-done.sh preload-context.sh test-notify.sh; do
+        remove_our_symlink "$CLAUDE_DIR/hooks/$hook"
+    done
 fi
 
-# ── Merge hook entries into settings.json ────────────────────────────────────
+# ── Merge / strip hook entries in settings.json ──────────────────────────────
 
-if [[ $install_hooks -eq 1 ]]; then
-    if [[ ! -f "$CLAUDE_DIR/settings.json" ]]; then
+if [[ ! -f "$CLAUDE_DIR/settings.json" ]]; then
+    if [[ $install_hooks -eq 1 ]]; then
         printf '  settings.json not found — creating empty skeleton\n'
         printf '{}' > "$CLAUDE_DIR/settings.json"
     fi
+fi
 
-    python3 - "$CLAUDE_DIR/settings.json" "$SCRIPT_DIR/settings-additions.json" <<'PYEOF'
+if [[ -f "$CLAUDE_DIR/settings.json" ]]; then
+    python3 - "$CLAUDE_DIR/settings.json" "$SCRIPT_DIR/settings-additions.json" "$install_hooks" <<'PYEOF'
 import sys, json
 
 settings_path = sys.argv[1]
 additions_path = sys.argv[2]
+install_hooks = sys.argv[3] == "1"
 
 with open(settings_path) as f:
     settings = json.load(f)
@@ -113,30 +143,59 @@ with open(settings_path) as f:
 with open(additions_path) as f:
     additions = json.load(f)
 
-if "hooks" not in settings:
-    settings["hooks"] = {}
-
-added = 0
-for event, entries in additions.get("hooks", {}).items():
-    if event not in settings["hooks"]:
-        settings["hooks"][event] = []
-    for new_entry in entries:
-        new_cmds = frozenset(h["command"] for h in new_entry.get("hooks", []))
-        new_matcher = new_entry.get("matcher")
-        already_exists = any(
-            frozenset(h["command"] for h in ex.get("hooks", [])) == new_cmds
-            and ex.get("matcher") == new_matcher
-            for ex in settings["hooks"][event]
-        )
-        if not already_exists:
-            settings["hooks"][event].append(new_entry)
-            added += 1
+if install_hooks:
+    # Merge: add any of our entries that aren't already present.
+    if "hooks" not in settings:
+        settings["hooks"] = {}
+    added = 0
+    for event, entries in additions.get("hooks", {}).items():
+        if event not in settings["hooks"]:
+            settings["hooks"][event] = []
+        for new_entry in entries:
+            new_cmds = frozenset(h["command"] for h in new_entry.get("hooks", []))
+            new_matcher = new_entry.get("matcher")
+            already_exists = any(
+                frozenset(h["command"] for h in ex.get("hooks", [])) == new_cmds
+                and ex.get("matcher") == new_matcher
+                for ex in settings["hooks"][event]
+            )
+            if not already_exists:
+                settings["hooks"][event].append(new_entry)
+                added += 1
+    msg = f"settings.json: {added} hook entr{'y' if added == 1 else 'ies'} added"
+else:
+    # --no-hooks: strip our entries from settings.json if present.
+    removed = 0
+    if "hooks" in settings:
+        for event, entries in additions.get("hooks", {}).items():
+            if event not in settings["hooks"]:
+                continue
+            our_cmds = set()
+            our_matchers = set()
+            for entry in entries:
+                for h in entry.get("hooks", []):
+                    our_cmds.add(h["command"])
+                our_matchers.add(entry.get("matcher"))
+            kept = []
+            for existing in settings["hooks"][event]:
+                existing_cmds = {h["command"] for h in existing.get("hooks", [])}
+                if existing_cmds & our_cmds and existing.get("matcher") in our_matchers:
+                    removed += 1
+                else:
+                    kept.append(existing)
+            if kept:
+                settings["hooks"][event] = kept
+            else:
+                del settings["hooks"][event]
+        if not settings.get("hooks"):
+            settings.pop("hooks", None)
+    msg = f"settings.json: {removed} hook entr{'y' if removed == 1 else 'ies'} removed"
 
 with open(settings_path, "w") as f:
     json.dump(settings, f, indent=2)
     f.write("\n")
 
-print(f"settings.json: {added} hook entr{'y' if added == 1 else 'ies'} added")
+print(msg)
 PYEOF
 fi
 

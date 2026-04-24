@@ -65,7 +65,7 @@ function Install-FileLink {
 
     if ($UseCopy) {
         Copy-Item -Path $Target -Destination $LinkPath -Force
-        Write-Host "  copied $(Resolve-Path -Relative $LinkPath 2>$null || $LinkPath)"
+        Write-Host "  copied $LinkPath"
         return
     }
 
