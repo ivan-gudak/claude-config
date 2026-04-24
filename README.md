@@ -36,38 +36,185 @@ cd ~/.claude/claude-config && git pull && bash install.sh
 
 `install.sh` is idempotent — safe to re-run after every pull. New files added to the repo are automatically linked on the next run.
 
-## How the commands work
+## Commands
 
-### `/impl <description>` or `/impl @path/to/spec.md`
+### `/impl`
 
-Structured implementation workflow:
-1. Load description (supports `@file` syntax)
-2. Clarify ambiguities (asks questions before writing a plan)
-3. Write and present an implementation plan for approval
-4. Implement, run tests, update docs/knowledge — using subagents for codebase exploration (before planning) and parallelising the post-implementation doc/knowledge/instructions updates
-5. Output a structured report
+```
+/impl <description>
+/impl @path/to/spec.md
+```
 
-### `/vuln <CVE-tokens>`
+Structured implementation workflow with mandatory clarification, planning, and knowledge persistence.
 
-Fix security vulnerabilities. Accepts `JIRA-ID:CVE-ID` pairs or bare CVE IDs.
+**Phases:**
+
+1. **Load** — inline description or `@file` (reads the file, supports embedded images)
+2. **Clarify** — analyzes the description for ambiguities; asks structured questions with multiple-choice answers before writing anything. Skips if nothing is ambiguous.
+3. **Explore** — spawns an Explore subagent to map relevant files, patterns, test locations, and naming conventions. Result feeds the plan; no file reads pollute the main context.
+4. **Plan** — produces a written plan (goal, approach, steps, files, tests, assumptions, out-of-scope) and asks for approval before touching any code.
+5. **Implement** — works through each step, runs linters/builds/tests, fixes failures. After verifying the outcome, spawns three agents **in parallel**:
+   - **Documentation agent** — scans for README/CHANGELOG/docs; applies minimal updates if the change is user-facing (skips for bug fixes and refactors)
+   - **Knowledge agent** — checks `~/.claude/memory/` and `.claude/memory/`; appends a structured entry if the implementation produced reusable insights
+   - **Instructions agent** — checks `CLAUDE.md` and `~/.claude/CLAUDE.md`; applies additive guardrails only if the implementation revealed a missing rule
+6. **Report** — structured summary: what was built, files changed, commands run, knowledge/instructions/docs outcome.
+
+**Examples:**
+
+```
+/impl add pagination to the user list endpoint
+/impl @specs/2026-04-payment-refactor.md
+```
+
+---
+
+### `/vuln`
+
+```
+/vuln <token> [<token> ...]
+```
+
+Fix one or more CVE vulnerabilities end-to-end: research → fix → verify → PR.
+
+**Token formats:**
+
+| Token | When to use |
+|-------|-------------|
+| `CVE-2023-46604` | bare CVE — no Jira ticket |
+| `MGD-2423:CVE-2023-46604` | Jira ticket linked to a CVE |
+
+Non-CVE identifiers (`CWE-*`, `OWASP 2021:A01`) are skipped with a warning.
+
+**What happens:**
+
+1. **Parse & filter** — extracts CVE IDs and optional Jira IDs; infers the `NOJIRA` placeholder convention from git history.
+2. **Research (parallel)** — for every CVE and simultaneously:
+   - **NVD agent** — fetches affected package, vulnerable version range, minimum safe version, and CVE description from the NVD API
+   - **Detect agent** — scans the repo's build files (`pom.xml`, `build.gradle`, `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`) for the dependency and its current version
+   - **Baseline agent** (`workflow-tools:test-baseline`) — runs the full test suite once and records all passing tests
+3. **Merge** — combines NVD data, detected version, and safe target; skips CVEs where the library isn't found.
+4. **Fix** — applies the minimal version bump (patch/minor preferred; major only if unavoidable), one CVE at a time.
+5. **Verify** — builds the project, re-runs tests, diffs against baseline. If previously-green tests fail, asks whether to proceed, revert, or investigate.
+6. **Commit & PR** — branch named after Jira ID + CVE ID (matching project convention); commit message includes CVE description, vulnerable range, and safe version; PR body summarises everything.
+
+**Examples:**
 
 ```
 /vuln CVE-2023-46604
 /vuln MGD-2423:CVE-2023-46604 CVE-2024-1234
+/vuln CVE-2024-1234 CVE-2024-5678 CVE-2024-9999
 ```
 
-NVD lookup, library detection in the repo, and test baseline all run in **parallel** before any fix is applied.
+---
 
-### `/upgrade <components>`
-
-Upgrade libraries, runtimes, or GitHub Actions.
+### `/upgrade`
 
 ```
-/upgrade springboot:latest java:21
+/upgrade <token> [<token> ...]
+```
+
+Upgrade libraries, runtimes, build tools, or GitHub Actions with compatibility checking before any file is changed.
+
+**Token formats:**
+
+| Token | Meaning |
+|-------|---------|
+| `springboot:3.3.11` | exact target version |
+| `springboot:minor` | latest patch on the current minor (e.g. `3.1.x → 3.1.12`) |
+| `springboot:latest` | highest stable release |
+| `node:lts` | latest LTS release (looks up official LTS source) |
+| `springboot` | highest version compatible with everything else in the repo |
+| `.github/workflows` | update all GitHub Actions `uses:` pins to latest release tags |
+
+**Phase 1 — planning (no files changed):**
+
+1. Inventories current versions from build files, runtime files, and CI YAML.
+2. Resolves the target version for each token.
+3. Spawns two agents **in parallel**:
+   - **Compatibility agent** — fetches release notes and changelogs; returns breaking changes, required companion upgrades (e.g. Spring Boot major → Hibernate, Mockito), and runtime version requirements
+   - **GitHub Actions agent** — scans `.github/workflows/` and applies `uses:` pin updates in-place (only spawned if the directory exists)
+4. Reviews compatibility findings; surfaces conflicts with ranked resolution options (lower version / upgrade blocker / skip).
+5. Presents the full upgrade plan and asks for confirmation before proceeding.
+
+**Phase 2 — execution (one component at a time):**
+
+1. Runs `workflow-tools:test-baseline` once and stores the result for all components.
+2. For each component: detect → plan changes → apply → companion upgrades → build → test → compare against baseline.
+3. Auto-fixes straightforward test breakage (renamed imports, updated assertion syntax); asks for guidance if not auto-fixable.
+4. Prints a summary table on completion.
+
+**Examples:**
+
+```
+/upgrade springboot:latest
+/upgrade springboot:latest java:21 hibernate:latest
+/upgrade node:lts
 /upgrade .github/workflows
+/upgrade springboot:3.3.11 java:21 gradle:latest .github/workflows
 ```
 
-Compatibility research and GitHub Actions scanning run in **parallel** before any changes are made.
+**Output:**
+
+```
+## Upgrade Summary
+
+| Component  | Before | After  | Status  | Notes                       |
+|------------|--------|--------|---------|-----------------------------|
+| springboot | 3.1.4  | 3.3.11 | OK      | Also upgraded hibernate 6.4 |
+| java       | 17     | 21     | OK      | Updated 2 test files        |
+| redis      | -      | -      | SKIPPED | Not found in project        |
+
+Tests: 142 passed, 0 regressions (baseline: 142 passing)
+```
+
+> All changes are left **uncommitted** on the current branch.
+
+---
+
+## Plugin agent: `workflow-tools:test-baseline`
+
+A reusable agent used internally by `/vuln` and `/upgrade`. You can also invoke it directly from any command or custom agent.
+
+**What it does:** runs the project's full test suite, parses the output, and returns a structured result suitable for before/after regression comparison.
+
+**Framework detection** (in order):
+
+| Detected file | Framework | Command |
+|---------------|-----------|---------|
+| `pom.xml` | Maven | `mvn test -q` |
+| `build.gradle` / `build.gradle.kts` | Gradle | `./gradlew test` (or `gradle test`) |
+| `package.json` | npm/Jest | value of `scripts.test`, or `npm test` |
+| `pyproject.toml` / `setup.py` / `pytest.ini` | pytest | `pytest -v` |
+| `Makefile` with a `test` target | Make | `make test` |
+
+If no framework is detected, it returns a structured result with `Framework: not detected` and zero counts rather than failing.
+
+**Output structure:**
+
+```markdown
+## Test Baseline
+- **Framework**: Maven
+- **Command**: `mvn test -q`
+- **Total**: 142 | **Passing**: 140 | **Failing**: 2 | **Skipped**: 0
+
+### Pre-existing failures
+com.example.FooTest#testBar
+com.example.FooTest#testBaz
+
+### Passing tests
+com.example.UserServiceTest#shouldCreateUser
+com.example.UserServiceTest#shouldDeleteUser
+...
+```
+
+Pre-existing failures are labelled so callers can distinguish them from regressions introduced by a change.
+
+**How to use it in your own commands or agents:**
+
+```
+Use the Agent tool with subagent_type "workflow-tools:test-baseline".
+Pass the project root as context. Store the returned baseline for later comparison.
+```
 
 ## Hooks
 
