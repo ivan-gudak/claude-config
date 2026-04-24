@@ -78,16 +78,33 @@ foreach ($hook in @('notify-done.sh', 'preload-context.sh', 'test-notify.sh')) {
 $settingsPath = Join-Path $ClaudeDir 'settings.json'
 $additionsPath = Join-Path $ScriptDir 'settings-additions.json'
 
+function Test-RealPython {
+    # Returns a working Python path, or $null. Guards against the Windows Store
+    # python3.exe stub (a zero-byte launcher that fails at runtime).
+    param([string]$Name)
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+    if (-not $cmd) { return $null }
+    try {
+        $out = & $cmd.Source --version 2>&1
+        if ($LASTEXITCODE -eq 0) { return $cmd }
+    } catch {}
+    return $null
+}
+
+$pyCmd = $null
 if (-not (Test-Path $settingsPath)) {
     Write-Host "  settings.json not found - nothing to clean up"
-} elseif (-not (Get-Command python -ErrorAction SilentlyContinue) -and
-          -not (Get-Command python3 -ErrorAction SilentlyContinue)) {
-    Write-Host "  python not found - skipping settings.json cleanup"
-    Write-Host "  (manually remove the three hook entries added by install.sh if present)"
 } else {
-    $pyCmd = Get-Command python3 -ErrorAction SilentlyContinue
-    if (-not $pyCmd) { $pyCmd = Get-Command python -ErrorAction SilentlyContinue }
+    $pyCmd = Test-RealPython 'python3'
+    if (-not $pyCmd) { $pyCmd = Test-RealPython 'python' }
 
+    if (-not $pyCmd) {
+        Write-Host "  python not found (or only the Windows Store stub is present) - skipping settings.json cleanup"
+        Write-Host "  (if you have installed hook entries via install.sh previously, remove them manually from $settingsPath)"
+    }
+}
+
+if ($pyCmd) {
     $pyScript = @'
 import sys, json
 
@@ -137,7 +154,12 @@ with open(settings_path, "w") as f:
 print(f"settings.json: {removed} hook entr{'y' if removed == 1 else 'ies'} removed")
 '@
 
-    & $pyCmd.Source -c $pyScript $settingsPath $additionsPath
+    try {
+        & $pyCmd.Source -c $pyScript $settingsPath $additionsPath
+    } catch {
+        Write-Host "  python execution failed: $($_.Exception.Message)"
+        Write-Host "  (if you have installed hook entries via install.sh previously, remove them manually from $settingsPath)"
+    }
 }
 
 Write-Host "Done."
