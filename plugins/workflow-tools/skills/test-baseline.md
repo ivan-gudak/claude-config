@@ -25,6 +25,7 @@ Run the project's full test suite and return a structured result for regression 
 
 4. **Return this exact structure and nothing else:**
 
+```markdown
 ## Test Baseline
 - **Framework**: [name or "not detected"]
 - **Command**: `[command used]`
@@ -35,3 +36,4 @@ Run the project's full test suite and return a structured result for regression 
 
 ### Passing tests
 [one test identifier per line]
+```
