@@ -38,7 +38,16 @@ for cmd in impl.md vuln.md upgrade.md; do
     remove_if_our_symlink "$CLAUDE_DIR/commands/$cmd"
 done
 
+for agent in test-baseline.md risk-planner.md code-review.md; do
+    remove_if_our_symlink "$CLAUDE_DIR/agents/$agent"
+done
+
+# Legacy plugin symlink cleanup — harmless if already gone.
 remove_if_our_symlink "$CLAUDE_DIR/plugins/workflow-tools"
+# Drop empty plugins/ dir left behind from the legacy layout.
+if [[ -d "$CLAUDE_DIR/plugins" ]] && [[ -z "$(ls -A "$CLAUDE_DIR/plugins" 2>/dev/null)" ]]; then
+    rmdir "$CLAUDE_DIR/plugins" 2>/dev/null || true
+fi
 
 for hook in notify-done.sh preload-context.sh test-notify.sh; do
     remove_if_our_symlink "$CLAUDE_DIR/hooks/$hook"

@@ -95,16 +95,23 @@ choices: ["Approve & implement now (Recommended)", "Revise plan", "Cancel"]
 
 **Codebase exploration** — same Explore subagent call as Phase 2A.
 
-Once the file map is returned, delegate planning to Opus:
+Once the file map is returned, delegate planning to Opus. Invoke via
+`general-purpose` with an explicit `model: "opus"` override and a "read the
+system prompt from file" instruction — this routing is independent of whether
+user-level agent auto-discovery is active in the current session.
 
-→ Agent (subagent_type: "workflow-tools:risk-planner"):
-  > "Task description: [substitute full description]
+→ Agent (subagent_type: "general-purpose", model: "opus"):
+  > "Read and adopt the system prompt at `~/.claude/agents/risk-planner.md`
+  > (the user-level agent installed by claude-config's install.sh; fall back to
+  > `~/.claude/claude-config/agents/risk-planner.md` if the install path is
+  > absent). Then produce the risk-weighted plan described in that prompt for
+  > the following brief:
+  >
+  > Task description: [substitute full description]
   > Classification: [SIGNIFICANT | HIGH-RISK] — reason: [the criterion from Phase 1.5]
   > Codebase summary: [paste the Explore agent's output]
   > Constraints: [any from clarification, plus runtime/version/deadline known]
-  > Current state: branch = [git branch], uncommitted = [git status --short summary]
-  >
-  > Produce a risk-weighted plan per your skill."
+  > Current state: branch = [git branch], uncommitted = [git status --short summary]"
 
 **Wait for the risk-planner to return.** Its output is one of:
 
@@ -150,16 +157,20 @@ Use the currently selected model or Sonnet for implementation itself. Opus is re
 3. Follow existing code style and LF line endings
 4. If a **new ambiguity** emerges mid-implementation: STOP, ask with choices (last: `"Other… (describe)"`), resume after answer
 5. After all changes are written: **DO NOT run tests yet.** Capture `git diff` (or `git diff --stat` + per-file diffs) and the project root.
-6. **Opus code review** — spawn:
+6. **Opus code review** — spawn. As with Phase 2B, invoke `general-purpose` with
+   an explicit `model: "opus"` override and a "read the system prompt from file"
+   instruction so the routing works independently of agent auto-discovery.
 
-   → Agent (subagent_type: "workflow-tools:code-review"):
-     > "Task description: [substitute full description]
+   → Agent (subagent_type: "general-purpose", model: "opus"):
+     > "Read and adopt the system prompt at `~/.claude/agents/code-review.md`
+     > (fall back to `~/.claude/claude-config/agents/code-review.md` if the
+     > install path is absent). Then produce the Opus code review for this brief:
+     >
+     > Task description: [substitute full description]
      > Classification: [SIGNIFICANT | HIGH-RISK] — reason: [from Phase 1.5]
      > Plan: [paste the risk-planner plan approved in Phase 2B]
      > Diff: [paste git diff output]
-     > Project root: [absolute path]
-     >
-     > Produce an Opus code review per your skill."
+     > Project root: [absolute path]"
 
 7. Act on the return:
    - **`### Re-classification` section** — the reviewer decided the change is actually `SIMPLE` or `MODERATE` on inspection. Surface it to the user and ask `choices: ["Accept revised classification (Recommended)", "Override and keep the BLOCK-gated review", "Cancel"]`. If accepted, treat the review as an implicit PASS: skip the BLOCK branch, proceed to step 8, and do NOT re-invoke the reviewer on later fix deltas. Record the revised classification for the Phase 5 report. If overridden, re-invoke code-review with an explicit note that the classification is intentional.

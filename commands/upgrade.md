@@ -64,16 +64,20 @@ All changes are left **uncommitted** on the current branch.
 
 7. **Confirm plan** — Before making any changes, print the upgrade plan (including per-component classification) and ask for confirmation if any version was auto-adjusted or companion upgrades were added.
 
-8. **Opus planning for SIGNIFICANT / HIGH-RISK components** — After the user confirms the overall plan, for every component flagged `SIGNIFICANT` or `HIGH-RISK`, delegate its detailed plan to `workflow-tools:risk-planner`. The risk-planner has `Grep` / `Read` / `Glob` tools and is expected to do its own usage-site scan before producing the plan; the caller does not pre-compute that.
+8. **Opus planning for SIGNIFICANT / HIGH-RISK components** — After the user confirms the overall plan, for every component flagged `SIGNIFICANT` or `HIGH-RISK`, invoke `general-purpose` with `model: "opus"` override and the risk-planner system prompt loaded from file. The planner will do its own usage-site scan; the caller does not pre-compute that.
 
-   → Agent (subagent_type: "workflow-tools:risk-planner"):
-     > "Task description: Upgrade [component] from [current version] to [target version] in this repo.
+   → Agent (subagent_type: "general-purpose", model: "opus"):
+     > "Read and adopt the system prompt at `~/.claude/agents/risk-planner.md`
+     > (fall back to `~/.claude/claude-config/agents/risk-planner.md` if absent).
+     > Then produce the risk-weighted plan for:
+     >
+     > Task description: Upgrade [component] from [current version] to [target version] in this repo.
      > Classification: [SIGNIFICANT | HIGH-RISK] — reason: [the criterion from step 5]
      > Codebase summary: inventory found the component in: [list of file paths from the Phase 1 step 1 inventory]. Release-notes and compat findings from Agent A: [paste Agent A's output for this component — breaking changes, companion upgrades, runtime requirements].
      > Constraints: [companion upgrades required; runtime version; any compatibility notes from Agent A]
      > Current state: branch = [git branch], uncommitted = [git status --short summary]
      >
-     > Produce a risk-weighted plan per your skill. Before writing the plan, grep the repo for import sites and usage patterns of this component to understand the blast radius. Pay particular attention to: breaking API changes, migration order, test coverage of usage sites, rollback."
+     > Before writing the plan, grep the repo for import sites and usage patterns of this component to understand the blast radius. Pay particular attention to: breaking API changes, migration order, test coverage of usage sites, rollback."
 
    **If the risk-planner returns a `### Re-classification` section** for any component (planner decided on inspection the upgrade is actually `MODERATE`), surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep SIGNIFICANT/HIGH-RISK path", "Cancel component"]`. If accepted, drop that component to the MODERATE path for Phase 2 (standard apply → build → test with no Opus review gate). If overridden, re-invoke with the complete brief plus a note that the classification is intentional. Do not send a delta-only re-invocation.
 
@@ -95,7 +99,15 @@ All changes are left **uncommitted** on the current branch.
 
 Process components **one at a time** in order:
 
-1. **Baseline tests** (first component only) — Use the Agent tool with `subagent_type "workflow-tools:test-baseline"`. Pass the project root as context. Store the returned baseline; reuse for all subsequent component comparisons. Do not re-run the baseline for subsequent components — use the counts captured here for all comparisons throughout Phase 2.
+1. **Baseline tests** (first component only) — Invoke `general-purpose` with the test-baseline system prompt loaded from file:
+
+   → Agent (subagent_type: "general-purpose"):
+     > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
+     > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
+     > Then run the full test suite in [project root] and return the structured
+     > baseline result described there."
+
+   Store the returned baseline; reuse for all subsequent component comparisons. Do not re-run the baseline for subsequent components — use the counts captured here for all comparisons throughout Phase 2.
 
 2. **Detect** — Find the component. See `ecosystems.md`. If not found, warn and skip.
 
@@ -112,15 +124,17 @@ Process components **one at a time** in order:
    **SIGNIFICANT / HIGH-RISK components** → perform an Opus code review BEFORE building/testing:
 
    a. Capture the `git diff` for this component (and the companion-upgrade diffs applied in step 5).
-   b. Spawn the reviewer:
-      → Agent (subagent_type: "workflow-tools:code-review"):
-        > "Task description: Upgrade [component] from [current] to [target] and any companion upgrades applied alongside it.
+   b. Spawn the reviewer — `general-purpose` with `model: "opus"` override and the code-review system prompt loaded from file:
+      → Agent (subagent_type: "general-purpose", model: "opus"):
+        > "Read and adopt the system prompt at `~/.claude/agents/code-review.md`
+        > (fall back to `~/.claude/claude-config/agents/code-review.md` if absent).
+        > Then produce the Opus code review for this brief, focusing on migration order, breaking API changes, missed usage sites, dependency risk, rollback:
+        >
+        > Task description: Upgrade [component] from [current] to [target] and any companion upgrades applied alongside it.
         > Classification: [SIGNIFICANT | HIGH-RISK]
         > Plan: [paste the Opus plan approved in Phase 1 step 8]
         > Diff: [paste git diff]
-        > Project root: [absolute path]
-        >
-        > Produce an Opus code review per your skill. Focus on: migration order, breaking API changes, missed usage sites, dependency risk, rollback."
+        > Project root: [absolute path]"
    c. Act on the return:
       - **`### Re-classification` section** — reviewer decided this component is actually `MODERATE`. Surface it, ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel component"]`. If accepted, drop this component to the MODERATE path — treat as implicit PASS, proceed to step 7, skip the re-review on later fix deltas. Record the revised classification for the summary table.
       - **BLOCK** — fix the blocking findings (current model or Sonnet), re-capture the diff, re-run the review. Do NOT proceed to step 7 until verdict is not BLOCK.

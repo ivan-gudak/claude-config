@@ -96,36 +96,22 @@ except Exception as exc:
 
 section() { printf '\n== %s ==\n' "$1"; }
 
-# ── JSON validity ────────────────────────────────────────────────────────────
-section "JSON validity"
+# ── Repo layout + JSON validity ──────────────────────────────────────────────
+section "Repo layout + JSON validity"
 if command -v python3 &>/dev/null; then
-    if python3 -c "import json; json.load(open('$REPO_DIR/plugins/workflow-tools/plugin.json'))"; then
-        ok "plugin.json parses"
-    else
-        bad "plugin.json does NOT parse"
-    fi
     if python3 -c "import json; json.load(open('$REPO_DIR/settings-additions.json'))"; then
         ok "settings-additions.json parses"
     else
         bad "settings-additions.json does NOT parse"
     fi
-    # Sanity: plugin.json is manifest-only (agents live in agents/*.md per Claude Code spec)
-    if python3 -c "
-import json, sys
-with open('$REPO_DIR/plugins/workflow-tools/plugin.json') as f:
-    p = json.load(f)
-# Fail if the old-style 'agents' array is back — it would be silently ignored by Claude Code.
-sys.exit(1 if 'agents' in p else 0)
-"; then
-        ok "plugin.json is manifest-only (no stale 'agents' array)"
-    else
-        bad "plugin.json contains an 'agents' array — move them to agents/*.md with YAML frontmatter"
-    fi
-    # Every agent file has the required frontmatter fields
+
+    # Every agent file exists at the canonical location with required frontmatter.
+    # Agent discovery in Claude Code works via ~/.claude/agents/<name>.md — the
+    # installer symlinks each one. The repo source lives at <repo>/agents/.
     for agent in test-baseline risk-planner code-review; do
         if python3 -c "
 import sys
-p = '$REPO_DIR/plugins/workflow-tools/agents/$agent.md'
+p = '$REPO_DIR/agents/$agent.md'
 try:
     with open(p) as f:
         src = f.read()
@@ -143,19 +129,31 @@ missing = [f for f in need if f not in front]
 if missing:
     print('missing:', missing)
     sys.exit(1)
+# Filename must match the frontmatter 'name' field (Claude Code convention).
+want_name = 'name: ' + '$agent'
+if want_name not in front:
+    print('name mismatch')
+    sys.exit(1)
 # risk-planner and code-review must declare model: opus
 if '$agent' in ('risk-planner', 'code-review') and 'model: opus' not in front:
     print('no model: opus')
     sys.exit(1)
 sys.exit(0)
 "; then
-            ok "agents/$agent.md has required frontmatter"
+            ok "agents/$agent.md has valid frontmatter (name, tools, model where required)"
         else
-            bad "agents/$agent.md is missing required frontmatter"
+            bad "agents/$agent.md frontmatter is invalid or missing"
         fi
     done
+
+    # The legacy plugin layout must not be present in the repo any more.
+    if [[ -d "$REPO_DIR/plugins" ]]; then
+        bad "legacy plugins/ directory still present in the repo — should be deleted"
+    else
+        ok "legacy plugins/ directory absent from the repo"
+    fi
 else
-    ok "python3 unavailable — JSON checks skipped"
+    ok "python3 unavailable — JSON / frontmatter checks skipped"
 fi
 
 # ── Full install ─────────────────────────────────────────────────────────────
@@ -165,29 +163,17 @@ bash "$FAKE_REPO/install.sh" >/dev/null
 for cmd in impl.md vuln.md upgrade.md; do
     assert_symlink "$FAKE_CLAUDE/commands/$cmd" "commands/$cmd symlink"
 done
-assert_symlink "$FAKE_CLAUDE/plugins/workflow-tools" "plugins/workflow-tools symlink"
+for agent in test-baseline.md risk-planner.md code-review.md; do
+    assert_symlink "$FAKE_CLAUDE/agents/$agent" "agents/$agent symlink"
+done
 for hook in notify-done.sh preload-context.sh test-notify.sh; do
     assert_symlink "$FAKE_CLAUDE/hooks/$hook" "hooks/$hook symlink"
 done
 assert_settings_has_hook "notify-done.sh"    "settings.json contains notify-done hook"
 assert_settings_has_hook "preload-context.sh" "settings.json contains preload-context hook"
 assert_settings_has_hook "test-notify.sh"    "settings.json contains test-notify hook"
-
-# ── Sanity: the plugin symlink exposes the agent files ──────────────────────
-section "Plugin content reachable through symlink"
-for agent in test-baseline.md risk-planner.md code-review.md; do
-    if [[ -f "$FAKE_CLAUDE/plugins/workflow-tools/agents/$agent" ]]; then
-        ok "agents/$agent reachable"
-    else
-        bad "agents/$agent NOT reachable through plugin symlink"
-    fi
-done
-# Old layout must be absent
-if [[ -d "$FAKE_CLAUDE/plugins/workflow-tools/skills" ]]; then
-    bad "legacy skills/ directory still present — should have been removed in the migration"
-else
-    ok "legacy skills/ directory is absent"
-fi
+# Installer must not leave a stale plugins/ dir behind after the legacy cleanup.
+assert_missing "$FAKE_CLAUDE/plugins/workflow-tools" "no legacy plugins/workflow-tools on install target"
 
 # ── Idempotent re-run ────────────────────────────────────────────────────────
 section "Idempotent re-run"
@@ -195,13 +181,9 @@ bash "$FAKE_REPO/install.sh" >/dev/null
 for cmd in impl.md vuln.md upgrade.md; do
     assert_symlink "$FAKE_CLAUDE/commands/$cmd" "re-run keeps commands/$cmd"
 done
-assert_symlink "$FAKE_CLAUDE/plugins/workflow-tools" "re-run keeps plugin symlink"
-# No stray nested symlink inside the plugin link
-if [[ -L "$FAKE_CLAUDE/plugins/workflow-tools/workflow-tools" ]]; then
-    bad "stray nested symlink inside plugins/workflow-tools"
-else
-    ok "no stray nested plugin symlink"
-fi
+for agent in test-baseline.md risk-planner.md code-review.md; do
+    assert_symlink "$FAKE_CLAUDE/agents/$agent" "re-run keeps agents/$agent"
+done
 
 # ── Subtractive: --no-hooks removes hooks + strips settings ──────────────────
 section "--no-hooks subtractive"
@@ -212,24 +194,19 @@ done
 assert_settings_lacks_hook "notify-done.sh"    "--no-hooks stripped notify-done from settings.json"
 assert_settings_lacks_hook "preload-context.sh" "--no-hooks stripped preload-context from settings.json"
 assert_settings_lacks_hook "test-notify.sh"    "--no-hooks stripped test-notify from settings.json"
-# Commands + plugin remain
-assert_symlink "$FAKE_CLAUDE/commands/impl.md"           "--no-hooks keeps commands/impl.md"
-assert_symlink "$FAKE_CLAUDE/plugins/workflow-tools"     "--no-hooks keeps plugin"
-
-# ── Subtractive: --no-plugin removes the plugin ──────────────────────────────
-section "--no-plugin subtractive"
-# Re-install cleanly first to restore hooks for later checks
-bash "$FAKE_REPO/install.sh" >/dev/null
-bash "$FAKE_REPO/install.sh" --no-plugin >/dev/null
-assert_missing "$FAKE_CLAUDE/plugins/workflow-tools" "plugin removed by --no-plugin"
-assert_symlink "$FAKE_CLAUDE/commands/impl.md" "--no-plugin keeps commands/impl.md"
-for hook in notify-done.sh preload-context.sh test-notify.sh; do
-    assert_symlink "$FAKE_CLAUDE/hooks/$hook" "--no-plugin keeps hooks/$hook"
+# Commands + agents remain
+assert_symlink "$FAKE_CLAUDE/commands/impl.md"   "--no-hooks keeps commands/impl.md"
+for agent in test-baseline.md risk-planner.md code-review.md; do
+    assert_symlink "$FAKE_CLAUDE/agents/$agent"  "--no-hooks keeps agents/$agent"
 done
-# Regression guard: --no-plugin must NOT touch hook entries in settings.json.
-assert_settings_has_hook "notify-done.sh"    "--no-plugin keeps notify-done in settings.json"
-assert_settings_has_hook "preload-context.sh" "--no-plugin keeps preload-context in settings.json"
-assert_settings_has_hook "test-notify.sh"    "--no-plugin keeps test-notify in settings.json"
+
+# ── --no-plugin flag must be rejected (agents are now essential) ─────────────
+section "--no-plugin flag retired"
+if bash "$FAKE_REPO/install.sh" --no-plugin >/dev/null 2>&1; then
+    bad "--no-plugin should be rejected as an unknown flag"
+else
+    ok "--no-plugin is rejected (agents are not optional)"
+fi
 
 # ── Uninstall ────────────────────────────────────────────────────────────────
 section "Uninstall"
@@ -238,7 +215,9 @@ bash "$FAKE_REPO/uninstall.sh" >/dev/null
 for cmd in impl.md vuln.md upgrade.md; do
     assert_missing "$FAKE_CLAUDE/commands/$cmd" "uninstall removed commands/$cmd"
 done
-assert_missing "$FAKE_CLAUDE/plugins/workflow-tools" "uninstall removed plugin"
+for agent in test-baseline.md risk-planner.md code-review.md; do
+    assert_missing "$FAKE_CLAUDE/agents/$agent" "uninstall removed agents/$agent"
+done
 for hook in notify-done.sh preload-context.sh test-notify.sh; do
     assert_missing "$FAKE_CLAUDE/hooks/$hook" "uninstall removed hooks/$hook"
 done
@@ -252,7 +231,20 @@ bash "$FAKE_REPO/install.sh" >/dev/null
 for cmd in impl.md vuln.md upgrade.md; do
     assert_symlink "$FAKE_CLAUDE/commands/$cmd" "round-trip: commands/$cmd back"
 done
-assert_symlink "$FAKE_CLAUDE/plugins/workflow-tools" "round-trip: plugin back"
+for agent in test-baseline.md risk-planner.md code-review.md; do
+    assert_symlink "$FAKE_CLAUDE/agents/$agent" "round-trip: agents/$agent back"
+done
+
+# ── Legacy plugin cleanup on install ─────────────────────────────────────────
+# If a user upgrades from an older install (plugins/workflow-tools symlink
+# existed), a fresh install.sh must remove that stale symlink so ~/.claude/plugins
+# doesn't linger as a broken directory.
+section "Legacy plugin cleanup on upgrade"
+bash "$FAKE_REPO/uninstall.sh" >/dev/null
+mkdir -p "$FAKE_CLAUDE/plugins"
+ln -s "../claude-config/plugins/workflow-tools-phantom" "$FAKE_CLAUDE/plugins/workflow-tools"  # stale
+bash "$FAKE_REPO/install.sh" >/dev/null
+assert_missing "$FAKE_CLAUDE/plugins/workflow-tools" "install cleaned up legacy plugins/workflow-tools"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 printf '\n-- %d passed, %d failed --\n' "$pass" "$fail"

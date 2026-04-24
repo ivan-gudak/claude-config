@@ -3,33 +3,30 @@
 #
 # Flags:
 #   --no-hooks    Skip hook script symlinks and settings.json merge
-#   --no-plugin   Skip workflow-tools plugin symlink
 #   --help        Show this help
 set -euo pipefail
 
 install_hooks=1
-install_plugin=1
 
 for arg in "$@"; do
     case "$arg" in
         --no-hooks)  install_hooks=0 ;;
-        --no-plugin) install_plugin=0 ;;
         --help|-h)
             cat <<'EOF'
 Usage: bash install.sh [OPTIONS]
 
 Options:
-  --no-hooks    Install commands and plugin only. If hooks were previously installed,
+  --no-hooks    Install commands and agents only. If hooks were previously installed,
                 they will be ACTIVELY REMOVED (symlinks unlinked, settings.json entries stripped).
                 Use this if you don't want notifications or auto-injected git context.
-  --no-plugin   Install without the workflow-tools plugin. If the plugin symlink was
-                previously installed, it will be ACTIVELY REMOVED.
-                Note: /vuln and /upgrade use workflow-tools:test-baseline, so excluding the
-                plugin will degrade those commands.
   -h, --help    Show this help.
 
 Without flags, installs everything. Re-running with different flags converges to the
 requested state — safe and idempotent either way.
+
+Note: The three subagents (test-baseline, risk-planner, code-review) are required
+by /vuln and /upgrade and by the Opus-gated planning / review flow in /impl. There
+is no flag to opt out — the commands will not function without them.
 EOF
             exit 0
             ;;
@@ -57,29 +54,16 @@ if [[ "$CLAUDE_DIR" != "$EXPECTED_CLAUDE_DIR" ]]; then
 fi
 
 printf 'Installing claude-config from %s\n' "$SCRIPT_DIR"
-[[ $install_hooks  -eq 0 ]] && printf '  (hooks skipped — --no-hooks)\n'
-[[ $install_plugin -eq 0 ]] && printf '  (plugin skipped — --no-plugin)\n'
+[[ $install_hooks -eq 0 ]] && printf '  (hooks skipped — --no-hooks)\n'
 
 # ── Ensure target directories exist ──────────────────────────────────────────
 
 mkdir -p "$CLAUDE_DIR/commands"
-mkdir -p "$CLAUDE_DIR/plugins"
+mkdir -p "$CLAUDE_DIR/agents"
 [[ $install_hooks -eq 1 ]] && mkdir -p "$CLAUDE_DIR/hooks"
 
-# ── Command symlinks ──────────────────────────────────────────────────────────
-# ln -sf replaces existing regular files or symlinks with a fresh symlink.
-
-for cmd in impl.md vuln.md upgrade.md; do
-    ln -sf "../claude-config/commands/$cmd" "$CLAUDE_DIR/commands/$cmd"
-    printf '  linked commands/%s\n' "$cmd"
-done
-
-# ── Plugin directory symlink ──────────────────────────────────────────────────
-# If a real (non-symlink) directory exists at the target, remove it first so
-# ln -sf can create a symlink in its place.
-
-# Helper: remove a path only if it's our symlink (points into claude-config/).
-# Safe for paths that don't exist.
+# ── Helper: remove a path only if it's our symlink (points into claude-config/).
+#    Safe for paths that don't exist.
 remove_our_symlink() {
     local link="$1"
     if [[ -L "$link" ]]; then
@@ -92,18 +76,33 @@ remove_our_symlink() {
     fi
 }
 
-# ── Plugin directory symlink ──────────────────────────────────────────────────
+# ── Command symlinks ──────────────────────────────────────────────────────────
+# ln -sf replaces existing regular files or symlinks with a fresh symlink.
 
-plugin_target="$CLAUDE_DIR/plugins/workflow-tools"
-if [[ $install_plugin -eq 1 ]]; then
-    # Remove any existing symlink or real directory so ln -sf creates a clean symlink
-    # (ln -sf on a symlink-to-directory follows the link and creates inside it instead).
-    rm -rf "$plugin_target"
-    ln -sf "../claude-config/plugins/workflow-tools" "$plugin_target"
-    printf '  linked plugins/workflow-tools\n'
-else
-    # --no-plugin: actively uninstall our managed plugin symlink if present.
-    remove_our_symlink "$plugin_target"
+for cmd in impl.md vuln.md upgrade.md; do
+    ln -sf "../claude-config/commands/$cmd" "$CLAUDE_DIR/commands/$cmd"
+    printf '  linked commands/%s\n' "$cmd"
+done
+
+# ── Agent symlinks (user-level subagents) ─────────────────────────────────────
+# Each agent file at ~/.claude/agents/<name>.md is auto-discovered by Claude Code
+# via its YAML frontmatter and callable as Agent(subagent_type: "<name>").
+# Replaces the earlier plugin-based approach, which required marketplace
+# registration Claude Code's local-dir discovery does not support.
+
+for agent in test-baseline.md risk-planner.md code-review.md; do
+    ln -sf "../claude-config/agents/$agent" "$CLAUDE_DIR/agents/$agent"
+    printf '  linked agents/%s\n' "$agent"
+done
+
+# Cleanup: if the legacy plugins/workflow-tools/ symlink is still around from
+# a pre-restructure install, remove it. Otherwise ~/.claude/plugins/ will be
+# a dead directory with a broken symlink.
+legacy_plugin_target="$CLAUDE_DIR/plugins/workflow-tools"
+remove_our_symlink "$legacy_plugin_target"
+# Drop the parent plugins/ dir if it's empty after cleanup.
+if [[ -d "$CLAUDE_DIR/plugins" ]] && [[ -z "$(ls -A "$CLAUDE_DIR/plugins" 2>/dev/null)" ]]; then
+    rmdir "$CLAUDE_DIR/plugins" 2>/dev/null || true
 fi
 
 # ── Hook script symlinks ──────────────────────────────────────────────────────

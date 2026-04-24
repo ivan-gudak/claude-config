@@ -22,8 +22,9 @@ The caller passes a structured brief:
 - **Task description** - what was implemented, verbatim from the user where
   possible.
 - **Classification** - `SIGNIFICANT` or `HIGH-RISK` (with the reason).
-- **Plan** - the risk-weighted plan that was approved (from
-  `workflow-tools:risk-planner`, or user-approved equivalent).
+- **Plan** - the risk-weighted plan that was approved (produced by the
+  `risk-planner` system prompt at `~/.claude/agents/risk-planner.md`, or a
+  user-approved equivalent).
 - **Diff** - `git diff` or a file-by-file list of changes. MANDATORY.
 - **Project root** - absolute path so files can be opened.
 

@@ -34,8 +34,13 @@ For each vulnerability token:
 
    **Once per batch (not per CVE):**
 
-   - **Baseline agent** (workflow-tools:test-baseline):
-     > Run the full test suite and return structured baseline results.
+   - **Baseline agent** — invoke via `general-purpose` with the test-baseline
+     system prompt loaded from file, so routing works regardless of agent
+     auto-discovery:
+     > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
+     > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
+     > Then run the full test suite and return the structured baseline result
+     > described there."
 
    Wait for all agents to complete before proceeding. If the NVD agent cannot determine the package name, use the CVE ID to make a reasonable inference for the Detect agent.
 
@@ -74,16 +79,20 @@ For CVEs classified `MODERATE`, fix one at a time:
 
 For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
-1. **Plan with Opus** — Delegate planning to `workflow-tools:risk-planner`. The risk-planner has `Grep` / `Read` / `Glob` tools and will do its own usage-site scan; the Detect agent only returned declaration paths, not import sites.
+1. **Plan with Opus** — Invoke `general-purpose` with `model: "opus"` override and the risk-planner system prompt loaded from file. The planner will do its own usage-site scan — the Detect agent only returned declaration paths, not import sites.
 
-   → Agent (subagent_type: "workflow-tools:risk-planner"):
-     > "Task description: Remediate [CVE-ID] in [repo name]. Upgrade [library] from [current version] to [target version]. [One-line CVE description.]
+   → Agent (subagent_type: "general-purpose", model: "opus"):
+     > "Read and adopt the system prompt at `~/.claude/agents/risk-planner.md`
+     > (fall back to `~/.claude/claude-config/agents/risk-planner.md` if absent).
+     > Then produce the risk-weighted plan for:
+     >
+     > Task description: Remediate [CVE-ID] in [repo name]. Upgrade [library] from [current version] to [target version]. [One-line CVE description.]
      > Classification: [SIGNIFICANT | HIGH-RISK] — reason: [from step 5]
      > Codebase summary: Detect agent found the dependency declared in: [list of declaration file paths from step 3]. Current version: [current]. Target version: [target].
      > Constraints: keep breaking changes out of consumer code if avoidable; if unavoidable, enumerate them.
      > Current state: branch = [git branch], uncommitted = [git status --short summary]
      >
-     > Produce a risk-weighted plan per your skill. Before writing the plan, grep the repo for import sites and usage patterns of this library to understand the blast radius of a version bump / API change."
+     > Before writing the plan, grep the repo for import sites and usage patterns of this library to understand the blast radius of a version bump / API change."
 
    **If the risk-planner returns a `### Re-classification` section** instead of a full plan (it decided the CVE fix is actually `MODERATE` on inspection — e.g. a drop-in patch bump with no consumer-code change), surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep HIGH-RISK path", "Cancel"]`. If accepted, fall back to the MODERATE path for this CVE. If overridden, re-invoke with the complete brief plus a note that the classification is intentional. Do not send a delta-only re-invocation.
 
@@ -91,16 +100,18 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
 2. **Apply the fix** — With current model or Sonnet. Version bump + any code changes per the plan. No tests yet.
 
-3. **Opus code review** — Capture the full `git diff` for this CVE fix, then:
+3. **Opus code review** — Capture the full `git diff` for this CVE fix, then invoke `general-purpose` with `model: "opus"` override and the code-review system prompt loaded from file:
 
-   → Agent (subagent_type: "workflow-tools:code-review"):
-     > "Task description: Remediate [CVE-ID] — upgrade [library] from [current] to [target].
+   → Agent (subagent_type: "general-purpose", model: "opus"):
+     > "Read and adopt the system prompt at `~/.claude/agents/code-review.md`
+     > (fall back to `~/.claude/claude-config/agents/code-review.md` if absent).
+     > Then produce the Opus code review for this brief, focusing especially on security, dependency risk, migration (library API changes), and rollback:
+     >
+     > Task description: Remediate [CVE-ID] — upgrade [library] from [current] to [target].
      > Classification: [SIGNIFICANT | HIGH-RISK]
      > Plan: [paste risk-planner plan]
      > Diff: [paste git diff]
-     > Project root: [absolute path]
-     >
-     > Produce an Opus code review per your skill. Focus especially on security, dependency risk, migration (library API changes), and rollback."
+     > Project root: [absolute path]"
 
 4. **Act on the return:**
    - **`### Re-classification` section** — the reviewer decided the change is actually `MODERATE`. Surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel"]`. If accepted, treat as an implicit PASS and proceed to step 5; do NOT re-invoke code-review on fix deltas. Record the revised classification for the PR body.

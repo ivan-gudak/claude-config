@@ -1,6 +1,6 @@
 # claude-config
 
-Shared Claude Code configuration: custom commands, workflow plugins, and hooks.
+Shared Claude Code configuration: custom commands, reusable subagents, and hooks.
 
 ## What's here
 
@@ -9,7 +9,9 @@ Shared Claude Code configuration: custom commands, workflow plugins, and hooks.
 | `commands/impl.md` | `/impl` — structured implementation workflow with subagent optimisation |
 | `commands/vuln.md` | `/vuln` — CVE fix workflow with parallel research subagents |
 | `commands/upgrade.md` | `/upgrade` — dependency upgrade workflow with parallel compatibility research |
-| `plugins/workflow-tools/` | Shared plugin agents: `workflow-tools:test-baseline`, `workflow-tools:risk-planner` (Opus), `workflow-tools:code-review` (Opus) |
+| `agents/test-baseline.md` | Subagent system prompt — captures a pre-change test baseline; invoked by `/vuln` and `/upgrade` |
+| `agents/risk-planner.md` | Subagent system prompt — Opus risk-weighted planner for SIGNIFICANT / HIGH-RISK tasks |
+| `agents/code-review.md` | Subagent system prompt — Opus post-implementation 8-dimension review that gates the test run |
 | `references/fix-vuln/` | Reference docs used by `/vuln` — build-system detection, NVD API usage |
 | `references/upgrade/` | Reference docs used by `/upgrade` — ecosystem rules, LTS sources, compatibility constraints |
 | `references/model-routing/classification.md` | Shared task-complexity criteria and Opus-routing rules used by all three commands |
@@ -18,7 +20,7 @@ Shared Claude Code configuration: custom commands, workflow plugins, and hooks.
 | `hooks/preload-context.sh` | Auto-injects git context when you submit /impl, /vuln, or /upgrade |
 | `hooks/test-notify.sh` | Desktop notification with pass/fail count after every test suite run |
 | `install.sh` / `uninstall.sh` | Installer + uninstaller for macOS / Linux / WSL2 |
-| `install.ps1` / `uninstall.ps1` | Installer + uninstaller for native Windows (PowerShell) — commands + plugin only, no hooks |
+| `install.ps1` / `uninstall.ps1` | Installer + uninstaller for native Windows (PowerShell) — commands + agents only, no hooks |
 
 ## Requirements
 
@@ -50,9 +52,12 @@ cd ~/.claude/claude-config && git pull && bash install.sh
 
 | Flag | Effect |
 |------|--------|
-| `--no-hooks` | Install commands and plugin only; skip hook scripts and `settings.json` merge. Use this if you don't want notifications or auto-injected context. |
-| `--no-plugin` | Skip the `workflow-tools` plugin symlink. Note: `/vuln` and `/upgrade` use `workflow-tools:test-baseline`, so this will degrade those commands. |
+| `--no-hooks` | Install commands and agents only; skip hook scripts and `settings.json` merge. Use this if you don't want notifications or auto-injected context. |
 | `--help` | Show usage. |
+
+The subagents (`test-baseline`, `risk-planner`, `code-review`) are always
+installed — they're required by the commands. There is no opt-out flag for
+them.
 
 ## Uninstall
 
@@ -126,7 +131,7 @@ Non-CVE identifiers (`CWE-*`, `OWASP 2021:A01`) are skipped with a warning.
 2. **Research (parallel)** — for every CVE and simultaneously:
    - **NVD agent** — fetches affected package, vulnerable version range, minimum safe version, and CVE description from the NVD API
    - **Detect agent** — scans the repo's build files (`pom.xml`, `build.gradle`, `package.json`, `requirements.txt`, `go.mod`, `Cargo.toml`) for the dependency and its current version
-   - **Baseline agent** (`workflow-tools:test-baseline`) — runs the full test suite once and records all passing tests
+   - **Baseline agent** (`test-baseline`) — runs the full test suite once and records all passing tests
 3. **Merge** — combines NVD data, detected version, and safe target; skips CVEs where the library isn't found.
 4. **Fix** — applies the minimal version bump (patch/minor preferred; major only if unavoidable), one CVE at a time.
 5. **Verify** — builds the project, re-runs tests, diffs against baseline. If previously-green tests fail, asks whether to proceed, revert, or investigate.
@@ -173,7 +178,7 @@ Upgrade libraries, runtimes, build tools, or GitHub Actions with compatibility c
 
 **Phase 2 — execution (one component at a time):**
 
-1. Runs `workflow-tools:test-baseline` once and stores the result for all components.
+1. Runs `test-baseline` once and stores the result for all components.
 2. For each component: detect → plan changes → apply → companion upgrades → build → test → compare against baseline.
 3. Auto-fixes straightforward test breakage (renamed imports, updated assertion syntax); asks for guidance if not auto-fixable.
 4. Prints a summary table on completion.
@@ -217,15 +222,15 @@ currently selected model.
 |-------|---------|-------------------|
 | `SIMPLE` | Local change, trivial scope | Nothing — current model throughout |
 | `MODERATE` | Bounded scope, few files, clear requirements, same-major dependency bump, no code-change API breaks | Nothing — current model throughout |
-| `SIGNIFICANT` | Major bump, breaking API changes, runtime/build-tool upgrades, multi-module refactor, 3-5+ non-test files, unclear requirements | Planning (`workflow-tools:risk-planner`) + post-implementation review (`workflow-tools:code-review`) |
+| `SIGNIFICANT` | Major bump, breaking API changes, runtime/build-tool upgrades, multi-module refactor, 3-5+ non-test files, unclear requirements | Planning (`risk-planner`) + post-implementation review (`code-review`) |
 | `HIGH-RISK` | Auth / sessions / permissions, DB schema or migrations, public API changes, concurrency, payment / compliance / security-sensitive logic | Same as SIGNIFICANT; the review is held to a higher bar on security, migration, and rollback |
 
 **Workflow for SIGNIFICANT / HIGH-RISK:**
 
 1. Classify task complexity (output the level with a reason).
-2. Plan with Opus via `workflow-tools:risk-planner`.
+2. Plan with Opus via `risk-planner`.
 3. Implement with the currently selected model or Sonnet.
-4. Opus code review via `workflow-tools:code-review` — **before tests run**.
+4. Opus code review via `code-review` — **before tests run**.
 5. Run tests.
 6. Fix issues flagged by the review or failing tests (current model / Sonnet).
 7. Re-run tests if fixes were applied.
@@ -244,23 +249,33 @@ Sonnet / the current model — Opus is reserved for planning and review.
 
 ---
 
-## Plugin agent: `workflow-tools:test-baseline`
+## Subagents
 
-A reusable agent used internally by `/vuln` and `/upgrade`. You can also invoke it directly from any command or custom agent.
+The three commands rely on three reusable subagent system prompts that live in
+the repo at `agents/*.md` and are installed as user-level agents at
+`~/.claude/agents/*.md`. They are **invoked via the generic `general-purpose`
+subagent with the system prompt loaded from the file and (for the two Opus
+agents) a `model: "opus"` override** on the `Agent` tool. This pattern works
+independently of whether Claude Code's user-level agent auto-discovery has
+registered the files in the current session — the routing comes from the
+explicit `model` argument, not from agent discovery.
 
-**What it does:** runs the project's full test suite, parses the output, and returns a structured result suitable for before/after regression comparison.
+Example invocation (as used inside the command files):
 
-**Framework detection** (in order):
+```
+→ Agent (subagent_type: "general-purpose", model: "opus"):
+  > "Read and adopt the system prompt at ~/.claude/agents/code-review.md
+  > (fall back to ~/.claude/claude-config/agents/code-review.md if absent).
+  > Then produce the Opus code review for this brief: [...]"
+```
 
-| Detected file | Framework | Command |
-|---------------|-----------|---------|
-| `pom.xml` | Maven | `mvn test -q` |
-| `build.gradle` / `build.gradle.kts` | Gradle | `./gradlew test` (or `gradle test`) |
-| `package.json` | npm/Jest | value of `scripts.test`, or `npm test` |
-| `pyproject.toml` / `setup.py` / `pytest.ini` | pytest | `pytest -v` |
-| `Makefile` with a `test` target | Make | `make test` |
+### `test-baseline.md`
 
-If no framework is detected, it returns a structured result with `Framework: not detected` and zero counts rather than failing.
+Captures a pre-change test baseline. Auto-detects framework (Maven, Gradle,
+npm/Jest, pytest, Make), runs the full suite, parses the output, and returns a
+structured result. Used by `/vuln` and `/upgrade` to distinguish true
+regressions from pre-existing failures. Runs on the session's default model —
+no Opus needed.
 
 **Output structure:**
 
@@ -276,61 +291,50 @@ com.example.FooTest#testBaz
 
 ### Passing tests
 com.example.UserServiceTest#shouldCreateUser
-com.example.UserServiceTest#shouldDeleteUser
 ...
 ```
 
-Pre-existing failures are labelled so callers can distinguish them from regressions introduced by a change.
+If no framework is detected, returns `Framework: not detected` and zero counts
+rather than failing.
 
-**How to use it in your own commands or agents:**
+### `risk-planner.md` (Opus)
 
-```
-Use the Agent tool with subagent_type "workflow-tools:test-baseline".
-Pass the project root as context. Store the returned baseline for later comparison.
-```
+Risk-weighted planner used by `/impl`, `/vuln`, and `/upgrade` when a task is
+classified `SIGNIFICANT` or `HIGH-RISK`. Given a task description, the
+classification, a codebase summary, and the current state, returns a
+structured plan with explicit sections for security, migration, API stability,
+concurrency, dependency blast radius, rollback story, and test adequacy. It
+refuses to run if the caller didn't supply a classification.
 
-## Plugin agent: `workflow-tools:risk-planner` (Opus)
+Has an escape hatch: if on inspection the task is actually `SIMPLE` /
+`MODERATE`, the planner returns a `### Re-classification` section instead of
+the full plan; callers surface this to the user and fall back to the non-Opus
+path.
 
-Risk-weighted planner used by `/impl`, `/vuln`, and `/upgrade` when a task
-is classified `SIGNIFICANT` or `HIGH-RISK`. Runs on Claude Opus.
-
-**What it does:** given a task description, the classification, a codebase
-summary, and the current state (branch + uncommitted status), returns a
-structured plan with explicit sections for security, migration, API
-stability, concurrency, dependency blast radius, rollback story, and test
-adequacy. It refuses to run if the caller didn't supply a classification.
-
-**Use it directly:**
-
-```
-Use the Agent tool with subagent_type "workflow-tools:risk-planner".
-Pass: task description, classification, codebase summary, constraints, current state.
-Do NOT use for SIMPLE / MODERATE tasks — it's wasted context.
-```
-
-## Plugin agent: `workflow-tools:code-review` (Opus)
+### `code-review.md` (Opus)
 
 Post-implementation code reviewer used by `/impl`, `/vuln`, and `/upgrade`
-when a task is classified `SIGNIFICANT` or `HIGH-RISK`. Runs on Claude Opus.
-
-**What it does:** takes the plan and the full `git diff`, reads each changed
-file in its surroundings, and checks eight dimensions — correctness,
-security impact, architectural consistency, missed edge cases, migration
-risks, dependency risks, test adequacy, rollback considerations. Returns a
+when a task is classified `SIGNIFICANT` or `HIGH-RISK`. Takes the plan and the
+full `git diff`, reads each changed file in its surroundings, and checks eight
+dimensions — correctness, security, architectural consistency, missed edge
+cases, migration risks, dependency risks, test adequacy, rollback. Returns a
 verdict of `PASS`, `PASS WITH RECOMMENDATIONS`, or `BLOCK`, plus findings
 labelled `BLOCKER` / `MAJOR` / `MINOR` / `NIT` with `path:line` locations.
 
 **`BLOCK` gates the test run** — the calling command does not run tests
-until a follow-up review returns a non-`BLOCK` verdict. `BLOCK` means fix
-the specific finding, re-capture the diff, re-invoke the reviewer.
+until a follow-up review returns a non-`BLOCK` verdict. Same re-classification
+escape hatch as the planner.
 
-**Use it directly:**
+### Calling them from your own commands
 
 ```
-Use the Agent tool with subagent_type "workflow-tools:code-review".
-Pass: task description, classification, approved plan, git diff, project root.
-Do NOT use for SIMPLE / MODERATE tasks.
+→ Agent (subagent_type: "general-purpose", model: "opus"):
+  "Read and adopt the system prompt at ~/.claude/agents/<name>.md.
+   Then: [your brief, matching the agent's Inputs spec]"
 ```
+
+Omit `model: "opus"` if calling `test-baseline` — it inherits the session's
+model.
 
 ## Hooks
 
@@ -353,11 +357,14 @@ bash tests/smoke.sh
 
 The test covers:
 
-- Full install (commands, plugin, hooks, `settings.json` merge)
-- Subtractive flags: `--no-hooks` removes previously-installed hooks and strips
-  `settings.json` entries; `--no-plugin` removes the plugin symlink
+- Full install (commands, agents, hooks, `settings.json` merge)
+- Subtractive flag `--no-hooks` — removes previously-installed hooks and strips
+  `settings.json` entries; agents + commands stay
 - `uninstall.sh` removes managed symlinks and strips hook entries
-- `plugin.json` and `settings-additions.json` parse as JSON
+- Legacy `plugins/workflow-tools` cleanup on upgrade
+- Agent-file frontmatter validity (`name`, `description`, `tools`; plus
+  `model: opus` on `risk-planner` and `code-review`)
+- `settings-additions.json` parses as JSON
 
 Run it after any change to `install.sh`, `uninstall.sh`,
 `settings-additions.json`, or the plugin manifest.
@@ -396,7 +403,6 @@ Symlinks on Windows require either **Developer Mode** (Settings → For develope
 | Flag | Effect |
 |------|--------|
 | `-UseCopy` | Force file copy even if symlinks would work. Useful if you want portable paths. |
-| `-NoPlugin` | Skip the `workflow-tools` plugin. |
 
 **Uninstall:**
 
@@ -413,4 +419,4 @@ The three hook scripts (`notify-done.sh`, `preload-context.sh`, `test-notify.sh`
 
 - **WSL2** — if you run Claude Code from a WSL2 shell, you're on Linux: use the standard `bash install.sh` instructions above, hooks included.
 - **Git Bash** — if `bash` is in your PATH via Git Bash, the hooks may work but are untested.
-- **No hooks** — the commands (`/impl`, `/vuln`, `/upgrade`) and the `workflow-tools` plugin are fully functional without the hooks. Hooks are enhancements only.
+- **No hooks** — the commands (`/impl`, `/vuln`, `/upgrade`) and the three subagents are fully functional without the hooks. Hooks are enhancements only.

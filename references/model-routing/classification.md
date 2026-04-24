@@ -45,9 +45,9 @@ When in doubt between MODERATE and SIGNIFICANT, pick SIGNIFICANT and use Opus.
 ## Workflow for SIGNIFICANT / HIGH-RISK tasks
 
 1. Classify task complexity (output the level explicitly).
-2. **Plan with Opus** via `workflow-tools:risk-planner`.
+2. **Plan with Opus** via the `risk-planner` system prompt at `~/.claude/agents/risk-planner.md`, invoked via `Agent(subagent_type: "general-purpose", model: "opus")`.
 3. Implement with the current model or Sonnet.
-4. **Opus code review** via `workflow-tools:code-review`. Tests have NOT been run
+4. **Opus code review** via the `code-review` system prompt at `~/.claude/agents/code-review.md`, invoked the same way. Tests have NOT been run
    yet at this point - the review gates the test run.
 5. Run tests.
 6. Fix issues raised by the review or by failing tests (current model or Sonnet).

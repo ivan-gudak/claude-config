@@ -1,5 +1,0 @@
-{
-  "name": "workflow-tools",
-  "version": "1.2.0",
-  "description": "Reusable workflow agents for command pipelines: test-baseline (regression baseline), risk-planner (Opus), code-review (Opus). Agents are defined in agents/*.md with YAML frontmatter per the Claude Code plugin spec."
-}

@@ -11,12 +11,10 @@
 #   cd $env:USERPROFILE\.claude\claude-config
 #   powershell -ExecutionPolicy Bypass -File install.ps1
 #   powershell -ExecutionPolicy Bypass -File install.ps1 -UseCopy    # force copy over symlink
-#   powershell -ExecutionPolicy Bypass -File install.ps1 -NoPlugin   # skip workflow-tools plugin
 
 [CmdletBinding()]
 param(
-    [switch]$UseCopy,
-    [switch]$NoPlugin
+    [switch]$UseCopy
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,15 +40,14 @@ Expected setup:
 
 Write-Host "Installing claude-config from $ScriptDir"
 if ($UseCopy)   { Write-Host "  (using file copy - symlinks disabled)" }
-if ($NoPlugin)  { Write-Host "  (plugin skipped - -NoPlugin)" }
 Write-Host "  (hooks are not installed on native Windows - use WSL2 for hook support)"
 
 # -- Ensure target directories exist -------------------------------------------
 
 $CommandsDir = Join-Path $ClaudeDir 'commands'
-$PluginsDir  = Join-Path $ClaudeDir 'plugins'
+$AgentsDir   = Join-Path $ClaudeDir 'agents'
 New-Item -ItemType Directory -Force -Path $CommandsDir | Out-Null
-New-Item -ItemType Directory -Force -Path $PluginsDir  | Out-Null
+New-Item -ItemType Directory -Force -Path $AgentsDir   | Out-Null
 
 # -- Helpers -------------------------------------------------------------------
 
@@ -79,29 +76,6 @@ function Install-FileLink {
     }
 }
 
-function Install-DirectoryLink {
-    param(
-        [string]$Target,
-        [string]$LinkPath
-    )
-
-    if (Test-Path $LinkPath) { Remove-Item $LinkPath -Recurse -Force }
-
-    if ($UseCopy) {
-        Copy-Item -Path $Target -Destination $LinkPath -Recurse -Force
-        Write-Host "  copied $LinkPath (directory)"
-        return
-    }
-
-    try {
-        New-Item -ItemType SymbolicLink -Path $LinkPath -Target $Target -Force | Out-Null
-        Write-Host "  linked $LinkPath (directory)"
-    } catch {
-        Copy-Item -Path $Target -Destination $LinkPath -Recurse -Force
-        Write-Host "  copied $LinkPath (directory - symlink failed)"
-    }
-}
-
 # -- Install commands ----------------------------------------------------------
 
 foreach ($cmd in @('impl.md', 'vuln.md', 'upgrade.md')) {
@@ -110,12 +84,31 @@ foreach ($cmd in @('impl.md', 'vuln.md', 'upgrade.md')) {
     Install-FileLink -Target $src -LinkPath $dst
 }
 
-# -- Install plugin ------------------------------------------------------------
+# -- Install agents (user-level subagents) -------------------------------------
+# Claude Code auto-discovers agents placed at ~/.claude/agents/<name>.md
+# via their YAML frontmatter. Replaces the earlier plugin-based approach, which
+# required marketplace registration Claude Code's local-dir discovery does not
+# support.
 
-if (-not $NoPlugin) {
-    $pluginSrc = Join-Path $ScriptDir 'plugins\workflow-tools'
-    $pluginDst = Join-Path $PluginsDir 'workflow-tools'
-    Install-DirectoryLink -Target $pluginSrc -LinkPath $pluginDst
+foreach ($agent in @('test-baseline.md', 'risk-planner.md', 'code-review.md')) {
+    $src = Join-Path $ScriptDir "agents\$agent"
+    $dst = Join-Path $AgentsDir $agent
+    Install-FileLink -Target $src -LinkPath $dst
+}
+
+# -- Cleanup: remove legacy plugins\workflow-tools\ if left from a prior install
+$LegacyPlugin = Join-Path $ClaudeDir 'plugins\workflow-tools'
+if (Test-Path $LegacyPlugin) {
+    Remove-Item $LegacyPlugin -Recurse -Force
+    Write-Host "  removed legacy plugins\workflow-tools\ (no longer used)"
+}
+# Drop the parent plugins\ dir if it's empty after cleanup.
+$PluginsParent = Join-Path $ClaudeDir 'plugins'
+if (Test-Path $PluginsParent) {
+    $remaining = Get-ChildItem -Path $PluginsParent -Force -ErrorAction SilentlyContinue
+    if (-not $remaining) {
+        Remove-Item $PluginsParent -Force
+    }
 }
 
 Write-Host "Done."

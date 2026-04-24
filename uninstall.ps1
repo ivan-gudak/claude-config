@@ -63,7 +63,19 @@ foreach ($cmd in @('impl.md', 'vuln.md', 'upgrade.md')) {
     Remove-IfOurs (Join-Path $ClaudeDir "commands\$cmd")
 }
 
+foreach ($agent in @('test-baseline.md', 'risk-planner.md', 'code-review.md')) {
+    Remove-IfOurs (Join-Path $ClaudeDir "agents\$agent")
+}
+
+# Legacy plugin cleanup - harmless if already gone.
 Remove-IfOurs (Join-Path $ClaudeDir 'plugins\workflow-tools')
+$PluginsParent = Join-Path $ClaudeDir 'plugins'
+if (Test-Path $PluginsParent) {
+    $remaining = Get-ChildItem -Path $PluginsParent -Force -ErrorAction SilentlyContinue
+    if (-not $remaining) {
+        Remove-Item $PluginsParent -Force
+    }
+}
 
 # -- Hook symlinks shouldn't exist on native Windows (install.ps1 skips them),
 # -- but clean up defensively in case install.sh was run via WSL2 previously.
