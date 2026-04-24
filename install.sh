@@ -41,6 +41,11 @@ done
 
 # ── Merge hook entries into settings.json ────────────────────────────────────
 
+if [[ ! -f "$CLAUDE_DIR/settings.json" ]]; then
+    printf '  settings.json not found — creating empty skeleton\n'
+    printf '{}' > "$CLAUDE_DIR/settings.json"
+fi
+
 python3 - "$CLAUDE_DIR/settings.json" "$SCRIPT_DIR/settings-additions.json" <<'PYEOF'
 import sys, json, os
 

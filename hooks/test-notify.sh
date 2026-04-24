@@ -7,23 +7,23 @@ command -v python3 &>/dev/null || exit 0
 
 input=$(cat)
 
-command=$(python3 -c "
+command=$(echo "$input" | python3 -c "
 import sys, json
 try:
-    d = json.loads(sys.argv[1])
+    d = json.load(sys.stdin)
     print(d.get('command', ''))
 except Exception:
     print('')
-" "$input" 2>/dev/null) || true
+" 2>/dev/null) || true
 
-output=$(python3 -c "
+output=$(echo "$input" | python3 -c "
 import sys, json
 try:
-    d = json.loads(sys.argv[1])
+    d = json.load(sys.stdin)
     print(d.get('output', ''))
 except Exception:
     print('')
-" "$input" 2>/dev/null) || true
+" 2>/dev/null) || true
 
 # Exit early if this wasn't a test command
 if ! echo "$command" | grep -qE '(mvn test|gradlew test|gradle test|npm test|yarn test|pytest|make test)'; then
