@@ -1,6 +1,42 @@
 #!/usr/bin/env bash
 # Idempotent installer — safe to re-run after every git pull.
+#
+# Flags:
+#   --no-hooks    Skip hook script symlinks and settings.json merge
+#   --no-plugin   Skip workflow-tools plugin symlink
+#   --help        Show this help
 set -euo pipefail
+
+install_hooks=1
+install_plugin=1
+
+for arg in "$@"; do
+    case "$arg" in
+        --no-hooks)  install_hooks=0 ;;
+        --no-plugin) install_plugin=0 ;;
+        --help|-h)
+            cat <<'EOF'
+Usage: bash install.sh [OPTIONS]
+
+Options:
+  --no-hooks    Install commands and plugin only; skip hook scripts and settings merge.
+                Use this if you don't want notifications or auto-injected git context.
+  --no-plugin   Install commands (and optionally hooks) without the workflow-tools plugin.
+                Note: /vuln and /upgrade use workflow-tools:test-baseline, so excluding the
+                plugin will degrade those commands.
+  -h, --help    Show this help.
+
+Without flags, installs everything.
+EOF
+            exit 0
+            ;;
+        *)
+            printf 'ERROR: unknown argument: %s\n' "$arg" >&2
+            printf 'Run "bash install.sh --help" for usage.\n' >&2
+            exit 1
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -18,12 +54,14 @@ if [[ "$CLAUDE_DIR" != "$EXPECTED_CLAUDE_DIR" ]]; then
 fi
 
 printf 'Installing claude-config from %s\n' "$SCRIPT_DIR"
+[[ $install_hooks  -eq 0 ]] && printf '  (hooks skipped — --no-hooks)\n'
+[[ $install_plugin -eq 0 ]] && printf '  (plugin skipped — --no-plugin)\n'
 
 # ── Ensure target directories exist ──────────────────────────────────────────
 
 mkdir -p "$CLAUDE_DIR/commands"
-mkdir -p "$CLAUDE_DIR/hooks"
 mkdir -p "$CLAUDE_DIR/plugins"
+[[ $install_hooks -eq 1 ]] && mkdir -p "$CLAUDE_DIR/hooks"
 
 # ── Command symlinks ──────────────────────────────────────────────────────────
 # ln -sf replaces existing regular files or symlinks with a fresh symlink.
@@ -37,29 +75,34 @@ done
 # If a real (non-symlink) directory exists at the target, remove it first so
 # ln -sf can create a symlink in its place.
 
-plugin_target="$CLAUDE_DIR/plugins/workflow-tools"
-# Remove any existing symlink or real directory so ln -sf creates a clean symlink
-# (ln -sf on a symlink-to-directory follows the link and creates inside it instead).
-rm -rf "$plugin_target"
-ln -sf "../claude-config/plugins/workflow-tools" "$plugin_target"
-printf '  linked plugins/workflow-tools\n'
+if [[ $install_plugin -eq 1 ]]; then
+    plugin_target="$CLAUDE_DIR/plugins/workflow-tools"
+    # Remove any existing symlink or real directory so ln -sf creates a clean symlink
+    # (ln -sf on a symlink-to-directory follows the link and creates inside it instead).
+    rm -rf "$plugin_target"
+    ln -sf "../claude-config/plugins/workflow-tools" "$plugin_target"
+    printf '  linked plugins/workflow-tools\n'
+fi
 
 # ── Hook script symlinks ──────────────────────────────────────────────────────
 
-for hook in notify-done.sh preload-context.sh test-notify.sh; do
-    ln -sf "../claude-config/hooks/$hook" "$CLAUDE_DIR/hooks/$hook"
-    printf '  linked hooks/%s\n' "$hook"
-done
+if [[ $install_hooks -eq 1 ]]; then
+    for hook in notify-done.sh preload-context.sh test-notify.sh; do
+        ln -sf "../claude-config/hooks/$hook" "$CLAUDE_DIR/hooks/$hook"
+        printf '  linked hooks/%s\n' "$hook"
+    done
+fi
 
 # ── Merge hook entries into settings.json ────────────────────────────────────
 
-if [[ ! -f "$CLAUDE_DIR/settings.json" ]]; then
-    printf '  settings.json not found — creating empty skeleton\n'
-    printf '{}' > "$CLAUDE_DIR/settings.json"
-fi
+if [[ $install_hooks -eq 1 ]]; then
+    if [[ ! -f "$CLAUDE_DIR/settings.json" ]]; then
+        printf '  settings.json not found — creating empty skeleton\n'
+        printf '{}' > "$CLAUDE_DIR/settings.json"
+    fi
 
-python3 - "$CLAUDE_DIR/settings.json" "$SCRIPT_DIR/settings-additions.json" <<'PYEOF'
-import sys, json, os
+    python3 - "$CLAUDE_DIR/settings.json" "$SCRIPT_DIR/settings-additions.json" <<'PYEOF'
+import sys, json
 
 settings_path = sys.argv[1]
 additions_path = sys.argv[2]
@@ -95,5 +138,6 @@ with open(settings_path, "w") as f:
 
 print(f"settings.json: {added} hook entr{'y' if added == 1 else 'ies'} added")
 PYEOF
+fi
 
 printf 'Done.\n'

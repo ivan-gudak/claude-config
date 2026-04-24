@@ -10,9 +10,14 @@ Shared Claude Code configuration: custom commands, workflow plugins, and hooks.
 | `commands/vuln.md` | `/vuln` — CVE fix workflow with parallel research subagents |
 | `commands/upgrade.md` | `/upgrade` — dependency upgrade workflow with parallel compatibility research |
 | `plugins/workflow-tools/` | `workflow-tools:test-baseline` — shared test-baseline agent (reuse in any command) |
+| `references/fix-vuln/` | Reference docs used by `/vuln` — build-system detection, NVD API usage |
+| `references/upgrade/` | Reference docs used by `/upgrade` — ecosystem rules, LTS sources, compatibility constraints |
 | `hooks/notify-done.sh` | Desktop notification when Claude finishes a turn |
 | `hooks/preload-context.sh` | Auto-injects git context when you submit /impl, /vuln, or /upgrade |
 | `hooks/test-notify.sh` | Desktop notification with pass/fail count after every test suite run |
+| `install.sh` | Idempotent installer for macOS / Linux / WSL2 |
+| `install.ps1` | Native Windows installer (PowerShell) — commands + plugin only, no hooks |
+| `uninstall.sh` | Reverse of `install.sh` — removes managed symlinks and hook entries |
 
 ## Requirements
 
@@ -22,19 +27,37 @@ Shared Claude Code configuration: custom commands, workflow plugins, and hooks.
 
 ## Install
 
+First-time setup:
+
 ```bash
 cd ~/.claude
 git clone <repo-url> claude-config
 cd claude-config && bash install.sh
 ```
 
-## Update
+Already have the repo? Skip the clone and just update:
 
 ```bash
 cd ~/.claude/claude-config && git pull && bash install.sh
 ```
 
 `install.sh` is idempotent — safe to re-run after every pull. New files added to the repo are automatically linked on the next run.
+
+**Install flags:**
+
+| Flag | Effect |
+|------|--------|
+| `--no-hooks` | Install commands and plugin only; skip hook scripts and `settings.json` merge. Use this if you don't want notifications or auto-injected context. |
+| `--no-plugin` | Skip the `workflow-tools` plugin symlink. Note: `/vuln` and `/upgrade` use `workflow-tools:test-baseline`, so this will degrade those commands. |
+| `--help` | Show usage. |
+
+## Uninstall
+
+```bash
+cd ~/.claude/claude-config && bash uninstall.sh
+```
+
+Removes the symlinks `install.sh` created and strips the hook entries from `~/.claude/settings.json`. The repo itself is left intact — delete it separately with `rm -rf ~/.claude/claude-config`.
 
 ## Commands
 
@@ -234,26 +257,27 @@ Works on macOS, Linux, and WSL2 without platform-specific setup.
 
 ## Windows (native PowerShell)
 
-`install.sh` and the hook scripts are bash-only and do not run on native Windows without WSL or Git Bash. The command files and plugin are plain text — no compatibility issue there.
+`install.ps1` handles native Windows installation — it creates symlinks for the command files and the plugin, falling back to file copies if symlink creation isn't permitted.
 
-### Manual installation
-
-Copy these files into your Claude Code config directory (`%USERPROFILE%\.claude\`):
-
-```
-claude-config\commands\impl.md      → .claude\commands\impl.md
-claude-config\commands\vuln.md      → .claude\commands\vuln.md
-claude-config\commands\upgrade.md   → .claude\commands\upgrade.md
-claude-config\plugins\workflow-tools\  → .claude\plugins\workflow-tools\
+```powershell
+cd $env:USERPROFILE\.claude
+git clone <repo-url> claude-config
+cd claude-config
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-To update after a `git pull`, re-copy the changed files.
+Symlinks on Windows require either **Developer Mode** (Settings → For developers) or running PowerShell as **Administrator**. Without either, `install.ps1` automatically copies the files instead — still functional, but a `git pull` requires re-running `install.ps1` to re-copy the updated files.
 
-Alternatively, `mklink` (cmd) or `New-Item -ItemType SymbolicLink` (PowerShell, requires **Developer Mode** or Administrator) can create symlinks to avoid manual re-copying.
+**Install flags:**
+
+| Flag | Effect |
+|------|--------|
+| `-UseCopy` | Force file copy even if symlinks would work. Useful if you want portable paths. |
+| `-NoPlugin` | Skip the `workflow-tools` plugin. |
 
 ### Hooks — not supported on native Windows
 
-The three hook scripts (`notify-done.sh`, `preload-context.sh`, `test-notify.sh`) require bash. On native Windows they will not run. Options:
+The three hook scripts (`notify-done.sh`, `preload-context.sh`, `test-notify.sh`) require bash. On native Windows they will not run, and `install.ps1` does not attempt to install them. Options:
 
 - **WSL2** — if you run Claude Code from a WSL2 shell, you're on Linux: use the standard `bash install.sh` instructions above, hooks included.
 - **Git Bash** — if `bash` is in your PATH via Git Bash, the hooks may work but are untested.

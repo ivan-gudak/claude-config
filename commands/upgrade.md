@@ -5,9 +5,9 @@ Each token is one of: `component:1.2.3` (exact), `component:minor` (latest patch
 `component` can be a library, framework, language runtime, build tool, or path like `.github/workflows`.
 
 Reference files (read when needed):
-- Ecosystem detection and update commands: `~/.copilot/skills/upgrade/references/ecosystems.md`
-- LTS lookup sources: `~/.copilot/skills/upgrade/references/lts-sources.md`
-- Compatibility constraints: `~/.copilot/skills/upgrade/references/compatibility.md`
+- Ecosystem detection and update commands: `~/.claude/claude-config/references/upgrade/ecosystems.md`
+- LTS lookup sources: `~/.claude/claude-config/references/upgrade/lts-sources.md`
+- Compatibility constraints: `~/.claude/claude-config/references/upgrade/compatibility.md`
 
 All changes are left **uncommitted** on the current branch.
 

@@ -3,8 +3,8 @@ Fix security vulnerabilities: $ARGUMENTS
 Each argument token is either `JIRA-ID:CVE-ID` (e.g. `MGD-2423:CVE-2023-46604`) or a bare `CVE-ID` (e.g. `CVE-2023-46604`). Parse and filter each token (steps 1–2), then research all CVEs in parallel (step 3) before applying fixes sequentially (steps 7–10).
 
 Reference files (read when needed):
-- Build system detection: `~/.copilot/skills/fix-vuln/references/build-systems.md`
-- NVD API usage: `~/.copilot/skills/fix-vuln/references/nvd-api.md`
+- Build system detection: `~/.claude/claude-config/references/fix-vuln/build-systems.md`
+- NVD API usage: `~/.claude/claude-config/references/fix-vuln/nvd-api.md`
 
 ---
 
@@ -24,11 +24,11 @@ For each vulnerability token:
    **For each CVE-ID remaining after filtering:**
 
    - **NVD agent** (general-purpose, needs WebFetch/WebSearch):
-     > "Fetch CVE details for [CVE-ID] using the NVD API. Reference: `~/.copilot/skills/fix-vuln/references/nvd-api.md`.
+     > "Fetch CVE details for [CVE-ID] using the NVD API. Reference: `~/.claude/claude-config/references/fix-vuln/nvd-api.md`.
      > Return: affected package name, vulnerable version range, minimum safe version, one-line CVE description."
 
    - **Detect agent** (Explore):
-     > "Scan this repository for the dependency [package name from the CVE]. Check: pom.xml, build.gradle, build.gradle.kts, package.json, requirements.txt, go.mod, Cargo.toml. Reference: `~/.copilot/skills/fix-vuln/references/build-systems.md`.
+     > "Scan this repository for the dependency [package name from the CVE]. Check: pom.xml, build.gradle, build.gradle.kts, package.json, requirements.txt, go.mod, Cargo.toml. Reference: `~/.claude/claude-config/references/fix-vuln/build-systems.md`.
      > Return: current version in use, file paths where the dependency appears."
 
    **Once per batch (not per CVE):**
