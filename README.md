@@ -108,6 +108,6 @@ Alternatively, `mklink` (cmd) or `New-Item -ItemType SymbolicLink` (PowerShell, 
 
 The three hook scripts (`notify-done.sh`, `preload-context.sh`, `test-notify.sh`) require bash. On native Windows they will not run. Options:
 
-- **WSL2** — the hooks work as-is; install from within a WSL2 shell using the normal `bash install.sh` path.
+- **WSL2** — if you run Claude Code from a WSL2 shell, you're on Linux: use the standard `bash install.sh` instructions above, hooks included.
 - **Git Bash** — if `bash` is in your PATH via Git Bash, the hooks may work but are untested.
 - **No hooks** — the commands (`/impl`, `/vuln`, `/upgrade`) and the `workflow-tools` plugin are fully functional without the hooks. Hooks are enhancements only.
