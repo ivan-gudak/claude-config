@@ -1,6 +1,6 @@
 Fix security vulnerabilities: $ARGUMENTS
 
-Each argument token is either `JIRA-ID:CVE-ID` (e.g. `MGD-2423:CVE-2023-46604`) or a bare `CVE-ID` (e.g. `CVE-2023-46604`). Process each vulnerability sequentially.
+Each argument token is either `JIRA-ID:CVE-ID` (e.g. `MGD-2423:CVE-2023-46604`) or a bare `CVE-ID` (e.g. `CVE-2023-46604`). Parse and filter each token (steps 1–2), then research all CVEs in parallel (step 3) before applying fixes sequentially (steps 7–10).
 
 Reference files (read when needed):
 - Build system detection: `~/.copilot/skills/fix-vuln/references/build-systems.md`
