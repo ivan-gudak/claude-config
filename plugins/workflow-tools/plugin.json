@@ -1,0 +1,13 @@
+{
+  "name": "workflow-tools",
+  "version": "1.0.0",
+  "description": "Reusable workflow agents for command pipelines",
+  "agents": [
+    {
+      "name": "test-baseline",
+      "description": "Run the full test suite and return structured results for regression comparison. Use before making changes to capture a baseline.",
+      "skill": "skills/test-baseline.md",
+      "tools": ["Bash", "Read", "Glob", "LS"]
+    }
+  ]
+}
