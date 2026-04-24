@@ -61,9 +61,9 @@ All changes are left **uncommitted** on the current branch.
 
 Process components **one at a time** in order:
 
-1. **Baseline tests** (first component only) — Use the Agent tool with `subagent_type "workflow-tools:test-baseline"`. Pass the project root as context. Store the returned baseline; reuse for all subsequent component comparisons.
+1. **Baseline tests** (first component only) — Use the Agent tool with `subagent_type "workflow-tools:test-baseline"`. Pass the project root as context. Store the returned baseline; reuse for all subsequent component comparisons. Do not re-run the baseline for subsequent components — use the counts captured here for all comparisons throughout Phase 2.
 2. **Detect** — Find the component. See `ecosystems.md`. If not found, warn and skip.
-3. **Plan changes** — Identify all files that must change (build files, lock files, wrapper scripts, config, Docker base images, CI YAML).
+3. **Plan changes** — Identify all files that must change (build files, lock files, wrapper scripts, config, Docker base images, CI YAML — excluding `.github/workflows/` action refs already updated by Agent B in Phase 1).
 4. **Apply** — Make the changes per `ecosystems.md` update commands.
 5. **Companion upgrades** — Apply automatically and note in summary (e.g. Spring Boot major bump may require Hibernate, Mockito).
 6. **Build** — Run the build command (no tests yet). If build fails, see "Handling build failures".
