@@ -1,61 +1,71 @@
 #!/usr/bin/env bash
 # Fires after every Bash tool call. Detects test suite commands, parses results, notifies.
 # Always exits 0 — must never block Claude.
-set -euo pipefail
+
+# Guard: if python3 is not available, skip silently
+command -v python3 &>/dev/null || exit 0
 
 input=$(cat)
 
 command=$(python3 -c "
 import sys, json
 try:
-    d = json.load(sys.stdin)
+    d = json.loads(sys.argv[1])
     print(d.get('command', ''))
 except Exception:
     print('')
-" 2>/dev/null <<< "$input")
+" "$input" 2>/dev/null) || true
 
 output=$(python3 -c "
 import sys, json
 try:
-    d = json.load(sys.stdin)
+    d = json.loads(sys.argv[1])
     print(d.get('output', ''))
 except Exception:
     print('')
-" 2>/dev/null <<< "$input")
+" "$input" 2>/dev/null) || true
 
 # Exit early if this wasn't a test command
 if ! echo "$command" | grep -qE '(mvn test|gradlew test|gradle test|npm test|yarn test|pytest|make test)'; then
     exit 0
 fi
 
-# Parse result by framework
-summary=""
+# Parse result using python3 (portable — no grep -P)
+summary=$(python3 - "$command" "$output" 2>/dev/null <<'PYEOF'
+import sys, re
 
-# Maven: "Tests run: X, Failures: Y, Errors: Z"
-if echo "$command" | grep -q "mvn"; then
-    total=$(echo "$output" | grep -oP 'Tests run: \K[0-9]+' | awk '{s+=$1} END {print s}')
-    failures=$(echo "$output" | grep -oP 'Failures: \K[0-9]+' | awk '{s+=$1} END {print s}')
-    errors=$(echo "$output" | grep -oP 'Errors: \K[0-9]+' | awk '{s+=$1} END {print s}')
-    [[ -n "$total" ]] && summary="${total} run, ${failures:-0} failed, ${errors:-0} errors"
+cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+out = sys.argv[2] if len(sys.argv) > 2 else ""
 
-# Gradle: "X tests completed, Y failed"
-elif echo "$command" | grep -qE "gradlew|gradle"; then
-    total=$(echo "$output" | grep -oP '[0-9]+ tests? completed' | grep -oP '[0-9]+' | tail -1)
-    failed=$(echo "$output" | grep -oP ', [0-9]+ failed' | grep -oP '[0-9]+' | tail -1)
-    [[ -n "$total" ]] && summary="${total} completed, ${failed:-0} failed"
+def first(pattern, text, default="0"):
+    m = re.findall(pattern, text)
+    return m[-1] if m else default
 
-# pytest: "X passed, Y failed"
-elif echo "$command" | grep -q "pytest"; then
-    passed=$(echo "$output" | grep -oP '[0-9]+ passed' | grep -oP '[0-9]+' | tail -1)
-    failed=$(echo "$output" | grep -oP '[0-9]+ failed' | grep -oP '[0-9]+' | tail -1)
-    [[ -n "$passed" ]] && summary="${passed} passed, ${failed:-0} failed"
+def sumall(pattern, text, default="0"):
+    vals = [int(x) for x in re.findall(pattern, text) if x.isdigit()]
+    return str(sum(vals)) if vals else default
 
-# Jest/npm: "Tests: X passed, Y failed, Z total"
-elif echo "$command" | grep -qE "npm|yarn"; then
-    passed=$(echo "$output" | grep -oP 'Tests:.*?([0-9]+) passed' | grep -oP '[0-9]+' | tail -1)
-    failed=$(echo "$output" | grep -oP 'Tests:.*?([0-9]+) failed' | grep -oP '[0-9]+' | tail -1)
-    [[ -n "$passed" ]] && summary="${passed} passed, ${failed:-0} failed"
-fi
+if "mvn" in cmd:
+    total = sumall(r"Tests run: (\d+)", out)
+    failures = sumall(r"Failures: (\d+)", out)
+    errors = sumall(r"Errors: (\d+)", out)
+    print(f"{total} run, {failures} failed, {errors} errors")
+elif "gradlew" in cmd or "gradle" in cmd:
+    total = first(r"(\d+) tests? completed", out)
+    failed = first(r", (\d+) failed", out)
+    print(f"{total} completed, {failed} failed")
+elif "pytest" in cmd:
+    passed = first(r"(\d+) passed", out)
+    failed = first(r"(\d+) failed", out)
+    print(f"{passed} passed, {failed} failed")
+elif "npm" in cmd or "yarn" in cmd:
+    passed = first(r"Tests:.*?(\d+) passed", out)
+    failed = first(r"Tests:.*?(\d+) failed", out)
+    print(f"{passed} passed, {failed} failed")
+else:
+    print("tests completed")
+PYEOF
+) || true
 
 [[ -z "$summary" ]] && summary="tests completed"
 message="Test run: $summary"
@@ -64,7 +74,10 @@ message="Test run: $summary"
 if [[ "$OSTYPE" == "darwin"* ]]; then
     osascript -e "display notification \"$message\" with title \"Claude Code\"" 2>/dev/null || true
 elif grep -qi microsoft /proc/version 2>/dev/null; then
-    wsl-notify-send --category "Claude Code" "$message" 2>/dev/null || echo -e '\a'
+    wsl-notify-send --category "Claude Code" "$message" 2>/dev/null || \
+    powershell.exe -Command \
+      "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null; \$n = New-Object System.Windows.Forms.NotifyIcon; \$n.Icon = [System.Drawing.SystemIcons]::Information; \$n.Visible = \$true; \$n.ShowBalloonTip(3000, 'Claude Code', '$message', [System.Windows.Forms.ToolTipIcon]::None); Start-Sleep -Milliseconds 3500; \$n.Dispose()" 2>/dev/null || \
+    echo -e '\a'
 else
     notify-send "Claude Code" "$message" 2>/dev/null || echo -e '\a'
 fi
