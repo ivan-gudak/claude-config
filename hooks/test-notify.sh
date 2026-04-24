@@ -11,7 +11,10 @@ command=$(echo "$input" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
-    print(d.get('command', ''))
+    # Claude Code's PostToolUse payload nests these under tool_input / tool_response.
+    # Fall back to top-level keys for older versions or non-standard runners.
+    cmd = (d.get('tool_input') or {}).get('command', '') or d.get('command', '')
+    print(cmd)
 except Exception:
     print('')
 " 2>/dev/null) || true
@@ -20,7 +23,8 @@ output=$(echo "$input" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
-    print(d.get('output', ''))
+    out = (d.get('tool_response') or {}).get('output', '') or d.get('output', '')
+    print(out)
 except Exception:
     print('')
 " 2>/dev/null) || true

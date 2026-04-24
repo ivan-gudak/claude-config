@@ -2,19 +2,23 @@
 # Fires on every message submission. Injects git context for /impl, /vuln, /upgrade commands.
 # Exits immediately (near-zero overhead) if the message doesn't match.
 # Always exits 0 — must never block Claude.
-set -euo pipefail
 
-# Read message from stdin JSON
-message=$(python3 -c "
+# Guard: if python3 is not available, skip silently
+command -v python3 &>/dev/null || exit 0
+
+# Read prompt from stdin JSON. Claude Code's UserPromptSubmit payload uses the
+# key "prompt"; hookify's rule engine also accepts "user_prompt". Try all three
+# known names for robustness across versions.
+prompt=$(python3 -c "
 import sys, json
 try:
-    data = json.load(sys.stdin)
-    print(data.get('message', ''))
+    d = json.load(sys.stdin)
+    print(d.get('prompt') or d.get('user_prompt') or d.get('message') or '')
 except Exception:
     print('')
-" 2>/dev/null)
+" 2>/dev/null) || true
 
-if ! echo "$message" | grep -qE '^/(impl|vuln|upgrade)'; then
+if ! echo "$prompt" | grep -qE '^/(impl|vuln|upgrade)'; then
     exit 0
 fi
 

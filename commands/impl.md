@@ -81,20 +81,35 @@ choices: ["Approve & implement now (Recommended)", "Revise plan", "Cancel"]
 5. If a **new ambiguity** emerges mid-implementation: STOP, ask with choices (last: `"Other… (describe)"`), resume after answer
 6. After all changes: run relevant linters, builds, and tests; fix any failures caused by your changes
 7. Verify the outcome matches the approved plan
-8. **Post-implementation maintenance** — After verifying the outcome (step 7), spawn all three agents simultaneously in a single message:
+8. **Post-implementation maintenance** — After verifying the outcome (step 7), first gather the actual change context that the three agents need:
+
+   a. Run `git diff --stat` (or equivalent for uncommitted changes) and capture the list of changed files with line counts.
+   b. Compose a **change summary block** in this format:
+   ```
+   Implementation: [one-sentence description of what was built]
+   Files changed (from git diff --stat):
+   <paste the git diff --stat output>
+   Notable additions/removals: [new commands, APIs, config keys, dependencies — one line each; or "none"]
+   ```
+
+   Then spawn all three agents simultaneously in a single message, passing the full change summary block to each:
 
    **Agent 1 — Documentation** (general-purpose):
-   > "Scan for README.md, CHANGELOG.md, docs/, or any .md files in the project root or a docs/ directory.
-   > The implementation was: [one-sentence summary of what was built].
+   > "Post-implementation documentation review. Change summary:
+   > [paste change summary block]
+   >
+   > Scan for README.md, CHANGELOG.md, docs/, or any .md files in the project root or a docs/ directory.
    > Determine if documentation needs updating:
    > - Skip if: purely a bug fix, vulnerability fix, internal refactor, or test-only change
    > - Update if: new feature, changed behavior, new commands/APIs/config options, altered usage patterns
-   > If an update is warranted: apply precise, minimal edits to the relevant section(s).
+   > Use the file list above to reason precisely about what changed. If an update is warranted: apply minimal edits to the relevant section(s).
    > Return: file updated and what changed, OR 'no update required (reason)'."
 
    **Agent 2 — Knowledge base** (general-purpose):
-   > "Check ~/.claude/memory/ (global) and .claude/memory/ (project-level, preferred for repo-specific knowledge) for existing knowledge files.
-   > The implementation was: [one-sentence summary].
+   > "Post-implementation knowledge review. Change summary:
+   > [paste change summary block]
+   >
+   > Check ~/.claude/memory/ (global) and .claude/memory/ (project-level, preferred for repo-specific knowledge) for existing knowledge files.
    > Determine if a new knowledge entry is warranted — look for: reusable insights or patterns, non-obvious constraints or gotchas, anti-patterns discovered, clarified trade-offs.
    > If YES: append to the most appropriate existing file (never create a new file if an existing one fits) using this format:
    > ### [Short title]
@@ -106,8 +121,10 @@ choices: ["Approve & implement now (Recommended)", "Revise plan", "Cancel"]
    > Return: file updated/created and summary of entry, OR 'no update required'."
 
    **Agent 3 — Instructions** (general-purpose):
-   > "Check CLAUDE.md in the project root and ~/.claude/CLAUDE.md (global).
-   > The implementation was: [one-sentence summary].
+   > "Post-implementation instructions review. Change summary:
+   > [paste change summary block]
+   >
+   > Check CLAUDE.md in the project root and ~/.claude/CLAUDE.md (global).
    > Determine if any rules, guidance, or guardrails are missing because of what this implementation revealed.
    > Skip if: the implementation followed existing patterns with no surprises, required no novel constraints, and introduced no anti-patterns. Only update if a concrete, recurring rule would have prevented a decision point or misunderstanding during this implementation.
    > If YES: apply minimal, additive, scoped changes only — do not rewrite sections wholesale.

@@ -4,6 +4,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+EXPECTED_CLAUDE_DIR="$HOME/.claude"
+
+if [[ "$CLAUDE_DIR" != "$EXPECTED_CLAUDE_DIR" ]]; then
+    printf 'ERROR: install.sh must run from within %s/claude-config/\n' "$EXPECTED_CLAUDE_DIR" >&2
+    printf '  Detected script location: %s\n' "$SCRIPT_DIR" >&2
+    printf '  Detected parent:          %s (expected: %s)\n' "$CLAUDE_DIR" "$EXPECTED_CLAUDE_DIR" >&2
+    printf '\n' >&2
+    printf 'Expected setup:\n' >&2
+    printf '  cd ~/.claude && git clone <repo-url> claude-config\n' >&2
+    printf '  cd claude-config && bash install.sh\n' >&2
+    exit 1
+fi
 
 printf 'Installing claude-config from %s\n' "$SCRIPT_DIR"
 
