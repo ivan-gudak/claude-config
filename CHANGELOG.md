@@ -6,6 +6,12 @@ Versions follow semver at the **repo** level — individual plugin versions are 
 
 ## [Unreleased]
 
+### Added
+- **`uninstall.ps1`** — native Windows uninstaller (PowerShell). Mirrors `uninstall.sh`: removes managed symlinks/copies and strips hook entries from `settings.json` if Python is available.
+
+### Changed
+- **README** — surfaces the Windows installation path from the main "Install" section (previously only reachable by scrolling to the Windows section); adds the native Windows uninstall command to the Uninstall section; documents update workflow for Windows.
+
 ## [1.1.0] — 2026-04-24
 
 ### Added

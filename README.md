@@ -15,9 +15,8 @@ Shared Claude Code configuration: custom commands, workflow plugins, and hooks.
 | `hooks/notify-done.sh` | Desktop notification when Claude finishes a turn |
 | `hooks/preload-context.sh` | Auto-injects git context when you submit /impl, /vuln, or /upgrade |
 | `hooks/test-notify.sh` | Desktop notification with pass/fail count after every test suite run |
-| `install.sh` | Idempotent installer for macOS / Linux / WSL2 |
-| `install.ps1` | Native Windows installer (PowerShell) — commands + plugin only, no hooks |
-| `uninstall.sh` | Reverse of `install.sh` — removes managed symlinks and hook entries |
+| `install.sh` / `uninstall.sh` | Installer + uninstaller for macOS / Linux / WSL2 |
+| `install.ps1` / `uninstall.ps1` | Installer + uninstaller for native Windows (PowerShell) — commands + plugin only, no hooks |
 
 ## Requirements
 
@@ -27,7 +26,9 @@ Shared Claude Code configuration: custom commands, workflow plugins, and hooks.
 
 ## Install
 
-First-time setup:
+> **On native Windows?** Jump to the [Windows section](#windows-native-powershell) — `install.sh` is bash-only and won't run outside WSL2 / Git Bash.
+
+First-time setup (macOS / Linux / WSL2):
 
 ```bash
 cd ~/.claude
@@ -53,11 +54,20 @@ cd ~/.claude/claude-config && git pull && bash install.sh
 
 ## Uninstall
 
+macOS / Linux / WSL2:
+
 ```bash
 cd ~/.claude/claude-config && bash uninstall.sh
 ```
 
-Removes the symlinks `install.sh` created and strips the hook entries from `~/.claude/settings.json`. The repo itself is left intact — delete it separately with `rm -rf ~/.claude/claude-config`.
+Native Windows:
+
+```powershell
+cd $env:USERPROFILE\.claude\claude-config
+powershell -ExecutionPolicy Bypass -File uninstall.ps1
+```
+
+Removes the symlinks (or copies) the installer created and strips the hook entries from `~/.claude/settings.json`. The repo itself is left intact — delete it separately (`rm -rf ~/.claude/claude-config` or `Remove-Item -Recurse -Force`).
 
 ## Commands
 
@@ -257,7 +267,9 @@ Works on macOS, Linux, and WSL2 without platform-specific setup.
 
 ## Windows (native PowerShell)
 
-`install.ps1` handles native Windows installation — it creates symlinks for the command files and the plugin, falling back to file copies if symlink creation isn't permitted.
+`install.ps1` handles native Windows installation. It creates symlinks for the command files and the plugin, falling back to file copies if symlink creation isn't permitted.
+
+**First-time setup:**
 
 ```powershell
 cd $env:USERPROFILE\.claude
@@ -266,7 +278,15 @@ cd claude-config
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Symlinks on Windows require either **Developer Mode** (Settings → For developers) or running PowerShell as **Administrator**. Without either, `install.ps1` automatically copies the files instead — still functional, but a `git pull` requires re-running `install.ps1` to re-copy the updated files.
+**Update after a `git pull`:**
+
+```powershell
+cd $env:USERPROFILE\.claude\claude-config
+git pull
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Symlinks on Windows require either **Developer Mode** (Settings → For developers) or running PowerShell as **Administrator**. Without either, `install.ps1` automatically copies the files instead — still functional, but note: with copies, a `git pull` requires re-running `install.ps1` to re-copy the updated files. With symlinks, `git pull` is enough.
 
 **Install flags:**
 
@@ -274,6 +294,15 @@ Symlinks on Windows require either **Developer Mode** (Settings → For develope
 |------|--------|
 | `-UseCopy` | Force file copy even if symlinks would work. Useful if you want portable paths. |
 | `-NoPlugin` | Skip the `workflow-tools` plugin. |
+
+**Uninstall:**
+
+```powershell
+cd $env:USERPROFILE\.claude\claude-config
+powershell -ExecutionPolicy Bypass -File uninstall.ps1
+```
+
+Removes the command and plugin items (whether they were installed as symlinks or copies). If `python` or `python3` is on PATH, also strips the three hook entries from `settings.json` — useful if you previously installed via WSL2's `install.sh`.
 
 ### Hooks — not supported on native Windows
 
