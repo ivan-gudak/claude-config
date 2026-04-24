@@ -84,3 +84,30 @@ Three hooks are active after install:
 The repo lives at `~/.claude/claude-config/`. All symlinks created by `install.sh` stay within `~/.claude/`, so they resolve correctly inside any container that bind-mounts `~/.claude/` from the host (e.g. ai-containers).
 
 Works on macOS, Linux, and WSL2 without platform-specific setup.
+
+## Windows (native PowerShell)
+
+`install.sh` and the hook scripts are bash-only and do not run on native Windows without WSL or Git Bash. The command files and plugin are plain text — no compatibility issue there.
+
+### Manual installation
+
+Copy these files into your Claude Code config directory (`%USERPROFILE%\.claude\`):
+
+```
+claude-config\commands\impl.md      → .claude\commands\impl.md
+claude-config\commands\vuln.md      → .claude\commands\vuln.md
+claude-config\commands\upgrade.md   → .claude\commands\upgrade.md
+claude-config\plugins\workflow-tools\  → .claude\plugins\workflow-tools\
+```
+
+To update after a `git pull`, re-copy the changed files.
+
+Alternatively, `mklink` (cmd) or `New-Item -ItemType SymbolicLink` (PowerShell, requires **Developer Mode** or Administrator) can create symlinks to avoid manual re-copying.
+
+### Hooks — not supported on native Windows
+
+The three hook scripts (`notify-done.sh`, `preload-context.sh`, `test-notify.sh`) require bash. On native Windows they will not run. Options:
+
+- **WSL2** — the hooks work as-is; install from within a WSL2 shell using the normal `bash install.sh` path.
+- **Git Bash** — if `bash` is in your PATH via Git Bash, the hooks may work but are untested.
+- **No hooks** — the commands (`/impl`, `/vuln`, `/upgrade`) and the `workflow-tools` plugin are fully functional without the hooks. Hooks are enhancements only.
