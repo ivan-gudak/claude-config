@@ -1,3 +1,9 @@
+---
+name: test-baseline
+description: Run the full test suite and return structured results for regression comparison. Use before making changes to capture a baseline. Inherits the main session's model — does not require Opus.
+tools: ["Bash", "Read", "Glob", "LS"]
+---
+
 Run the project's full test suite and return a structured result for regression comparison.
 
 ## Steps

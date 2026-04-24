@@ -109,20 +109,51 @@ if command -v python3 &>/dev/null; then
     else
         bad "settings-additions.json does NOT parse"
     fi
-    # Sanity: new plugin agents are registered
+    # Sanity: plugin.json is manifest-only (agents live in agents/*.md per Claude Code spec)
     if python3 -c "
 import json, sys
 with open('$REPO_DIR/plugins/workflow-tools/plugin.json') as f:
     p = json.load(f)
-names = {a['name'] for a in p.get('agents', [])}
-need = {'test-baseline', 'risk-planner', 'code-review'}
-missing = need - names
-sys.exit(0 if not missing else 1)
+# Fail if the old-style 'agents' array is back — it would be silently ignored by Claude Code.
+sys.exit(1 if 'agents' in p else 0)
 "; then
-        ok "plugin.json registers test-baseline, risk-planner, code-review"
+        ok "plugin.json is manifest-only (no stale 'agents' array)"
     else
-        bad "plugin.json is missing one of the expected agents"
+        bad "plugin.json contains an 'agents' array — move them to agents/*.md with YAML frontmatter"
     fi
+    # Every agent file has the required frontmatter fields
+    for agent in test-baseline risk-planner code-review; do
+        if python3 -c "
+import sys
+p = '$REPO_DIR/plugins/workflow-tools/agents/$agent.md'
+try:
+    with open(p) as f:
+        src = f.read()
+except FileNotFoundError:
+    print('missing')
+    sys.exit(1)
+if not src.startswith('---'):
+    sys.exit(1)
+end = src.find('---', 3)
+if end < 0:
+    sys.exit(1)
+front = src[3:end]
+need = {'name:', 'description:', 'tools:'}
+missing = [f for f in need if f not in front]
+if missing:
+    print('missing:', missing)
+    sys.exit(1)
+# risk-planner and code-review must declare model: opus
+if '$agent' in ('risk-planner', 'code-review') and 'model: opus' not in front:
+    print('no model: opus')
+    sys.exit(1)
+sys.exit(0)
+"; then
+            ok "agents/$agent.md has required frontmatter"
+        else
+            bad "agents/$agent.md is missing required frontmatter"
+        fi
+    done
 else
     ok "python3 unavailable — JSON checks skipped"
 fi
@@ -142,15 +173,21 @@ assert_settings_has_hook "notify-done.sh"    "settings.json contains notify-done
 assert_settings_has_hook "preload-context.sh" "settings.json contains preload-context hook"
 assert_settings_has_hook "test-notify.sh"    "settings.json contains test-notify hook"
 
-# ── Sanity: the plugin symlink exposes the new skills ────────────────────────
+# ── Sanity: the plugin symlink exposes the agent files ──────────────────────
 section "Plugin content reachable through symlink"
-for skill in test-baseline.md risk-planner.md code-review.md; do
-    if [[ -f "$FAKE_CLAUDE/plugins/workflow-tools/skills/$skill" ]]; then
-        ok "skills/$skill reachable"
+for agent in test-baseline.md risk-planner.md code-review.md; do
+    if [[ -f "$FAKE_CLAUDE/plugins/workflow-tools/agents/$agent" ]]; then
+        ok "agents/$agent reachable"
     else
-        bad "skills/$skill NOT reachable through plugin symlink"
+        bad "agents/$agent NOT reachable through plugin symlink"
     fi
 done
+# Old layout must be absent
+if [[ -d "$FAKE_CLAUDE/plugins/workflow-tools/skills" ]]; then
+    bad "legacy skills/ directory still present — should have been removed in the migration"
+else
+    ok "legacy skills/ directory is absent"
+fi
 
 # ── Idempotent re-run ────────────────────────────────────────────────────────
 section "Idempotent re-run"

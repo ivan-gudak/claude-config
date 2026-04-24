@@ -64,16 +64,16 @@ All changes are left **uncommitted** on the current branch.
 
 7. **Confirm plan** — Before making any changes, print the upgrade plan (including per-component classification) and ask for confirmation if any version was auto-adjusted or companion upgrades were added.
 
-8. **Opus planning for SIGNIFICANT / HIGH-RISK components** — After the user confirms the overall plan, for every component flagged `SIGNIFICANT` or `HIGH-RISK`, delegate its detailed plan to `workflow-tools:risk-planner`:
+8. **Opus planning for SIGNIFICANT / HIGH-RISK components** — After the user confirms the overall plan, for every component flagged `SIGNIFICANT` or `HIGH-RISK`, delegate its detailed plan to `workflow-tools:risk-planner`. The risk-planner has `Grep` / `Read` / `Glob` tools and is expected to do its own usage-site scan before producing the plan; the caller does not pre-compute that.
 
    → Agent (subagent_type: "workflow-tools:risk-planner"):
      > "Task description: Upgrade [component] from [current version] to [target version] in this repo.
      > Classification: [SIGNIFICANT | HIGH-RISK] — reason: [the criterion from step 5]
-     > Codebase summary: [paste inventory + usage-site summary for this component]
+     > Codebase summary: inventory found the component in: [list of file paths from the Phase 1 step 1 inventory]. Release-notes and compat findings from Agent A: [paste Agent A's output for this component — breaking changes, companion upgrades, runtime requirements].
      > Constraints: [companion upgrades required; runtime version; any compatibility notes from Agent A]
      > Current state: branch = [git branch], uncommitted = [git status --short summary]
      >
-     > Produce a risk-weighted plan per your skill. Pay particular attention to: breaking API changes, migration order, test coverage of usage sites, rollback."
+     > Produce a risk-weighted plan per your skill. Before writing the plan, grep the repo for import sites and usage patterns of this component to understand the blast radius. Pay particular attention to: breaking API changes, migration order, test coverage of usage sites, rollback."
 
    Present each Opus plan to the user for approval before proceeding to that component.
 

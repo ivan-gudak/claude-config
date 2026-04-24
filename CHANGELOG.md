@@ -8,9 +8,9 @@ Versions follow semver at the **repo** level — individual plugin versions are 
 
 ### Added
 - **Model routing across `/impl`, `/vuln`, `/upgrade`.** Every command now classifies the task as `SIMPLE`, `MODERATE`, `SIGNIFICANT`, or `HIGH-RISK` before planning. `SIMPLE` / `MODERATE` continue on the currently selected model. `SIGNIFICANT` / `HIGH-RISK` route planning and post-implementation review through Opus (two new plugin agents) and gate the test run on the review verdict.
-- **`plugins/workflow-tools/skills/risk-planner.md`** — new Opus-backed risk-weighted planner. Returns a structured plan with explicit security, migration, API-stability, concurrency, dependency, rollback, and test-adequacy sections. Refuses to run without a classification.
-- **`plugins/workflow-tools/skills/code-review.md`** — new Opus-backed post-implementation reviewer. Checks eight dimensions (correctness, security, architecture, edge cases, migration risks, dependency risks, test adequacy, rollback). Returns `PASS` / `PASS WITH RECOMMENDATIONS` / `BLOCK`. `BLOCK` gates the test run.
-- **`plugin.json` v1.1.0** — registers both new agents with `"model": "opus"`. `test-baseline` is unchanged.
+- **`plugins/workflow-tools/agents/risk-planner.md`** — new Opus-backed risk-weighted planner. Returns a structured plan with explicit security, migration, API-stability, concurrency, dependency, rollback, and test-adequacy sections. Refuses to run without a classification. Includes a re-classification escape hatch: if the task turns out to be `SIMPLE` / `MODERATE` on inspection, the planner says so and the caller falls back to the non-Opus path.
+- **`plugins/workflow-tools/agents/code-review.md`** — new Opus-backed post-implementation reviewer. Checks eight dimensions (correctness, security, architecture, edge cases, migration risks, dependency risks, test adequacy, rollback). Returns `PASS` / `PASS WITH RECOMMENDATIONS` / `BLOCK`. `BLOCK` gates the test run. Same re-classification escape hatch.
+- **`plugin.json` v1.2.0** — declares only the plugin manifest (name / version / description). Agents are defined in `agents/*.md` with YAML frontmatter, per the Claude Code plugin spec. `test-baseline` was moved from `skills/test-baseline.md` to `agents/test-baseline.md` in the same migration.
 - **`references/model-routing/classification.md`** — single source of truth for the four complexity levels, the triggers, the routing rules, and the eight review dimensions. All three commands link to it.
 - **`tests/smoke.sh`** — install → uninstall → install smoke test in a throwaway `HOME`. Covers the full install, the subtractive `--no-hooks` / `--no-plugin` paths, `uninstall.sh`, and JSON validity of `plugin.json` + `settings-additions.json`.
 - **`uninstall.ps1`** — native Windows uninstaller (PowerShell). Mirrors `uninstall.sh`: removes managed symlinks/copies and strips hook entries from `settings.json` if Python is available.
@@ -23,6 +23,11 @@ Versions follow semver at the **repo** level — individual plugin versions are 
 
 ### Changed in hooks
 - **`preload-context.sh`** — injects a one-line model-routing reminder before the existing git context for `/impl`, `/vuln`, `/upgrade`. Points at `references/model-routing/classification.md` so the rules are one read away.
+
+### Fixed
+- **Plugin agent declaration format.** The previous `plugin.json` "agents" array with a `"skill": "skills/X.md"` pointer was not a recognized Claude Code plugin format — Claude Code discovers plugin agents only from `agents/<name>.md` files with YAML frontmatter. Under the old layout, `"model": "opus"` was silently dropped and the subagents (including the pre-existing `test-baseline` from 1.0.0) never actually registered. Migrated all three agents to the canonical format and removed the old `skills/` directory. Invocation syntax (`subagent_type: "workflow-tools:<name>"`) is unchanged.
+- **`/upgrade` risk-planner brief** — Phase 1 step 8 previously asked the planner to consume a "usage-site summary" that the earlier phases never produced. Now the brief passes only the data actually captured (inventory paths + Agent A's compat output) and delegates the usage-site grep to the planner, which has `Grep`/`Read`/`Glob` tools.
+- **`/vuln` risk-planner brief** — same fix. Detect agent returns declaration paths, not import sites; the brief no longer overstates the summary, and the planner does its own blast-radius scan.
 
 ### Changed
 - **`install.sh --no-hooks` / `--no-plugin` now actively remove** previously-installed components rather than silently leaving them in place. Running `install.sh --no-hooks` after a full install removes the hook symlinks and strips the hook entries from `settings.json`. This matches what users expect from the flag name.

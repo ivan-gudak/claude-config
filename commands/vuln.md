@@ -74,16 +74,16 @@ For CVEs classified `MODERATE`, fix one at a time:
 
 For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
-1. **Plan with Opus** — Delegate planning to `workflow-tools:risk-planner`:
+1. **Plan with Opus** — Delegate planning to `workflow-tools:risk-planner`. The risk-planner has `Grep` / `Read` / `Glob` tools and will do its own usage-site scan; the Detect agent only returned declaration paths, not import sites.
 
    → Agent (subagent_type: "workflow-tools:risk-planner"):
      > "Task description: Remediate [CVE-ID] in [repo name]. Upgrade [library] from [current version] to [target version]. [One-line CVE description.]
      > Classification: [SIGNIFICANT | HIGH-RISK] — reason: [from step 5]
-     > Codebase summary: [paste the Detect agent's findings — files touched, current version, usage sites]
+     > Codebase summary: Detect agent found the dependency declared in: [list of declaration file paths from step 3]. Current version: [current]. Target version: [target].
      > Constraints: keep breaking changes out of consumer code if avoidable; if unavoidable, enumerate them.
      > Current state: branch = [git branch], uncommitted = [git status --short summary]
      >
-     > Produce a risk-weighted plan per your skill."
+     > Produce a risk-weighted plan per your skill. Before writing the plan, grep the repo for import sites and usage patterns of this library to understand the blast radius of a version bump / API change."
 
    Present the plan to the user and ask for approval before touching files.
 

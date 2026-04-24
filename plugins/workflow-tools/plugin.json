@@ -1,27 +1,5 @@
 {
   "name": "workflow-tools",
-  "version": "1.1.0",
-  "description": "Reusable workflow agents for command pipelines (test baseline, risk-weighted planner, Opus code review)",
-  "agents": [
-    {
-      "name": "test-baseline",
-      "description": "Run the full test suite and return structured results for regression comparison. Use before making changes to capture a baseline.",
-      "skill": "skills/test-baseline.md",
-      "tools": ["Bash", "Read", "Glob", "LS"]
-    },
-    {
-      "name": "risk-planner",
-      "description": "Risk-weighted planner for SIGNIFICANT / HIGH-RISK tasks. Returns a structured plan with an explicit risks section. Uses Claude Opus. Do NOT use for SIMPLE / MODERATE tasks.",
-      "skill": "skills/risk-planner.md",
-      "model": "opus",
-      "tools": ["Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch"]
-    },
-    {
-      "name": "code-review",
-      "description": "Post-implementation code review for SIGNIFICANT / HIGH-RISK tasks. Checks correctness, security, architecture, edge cases, migration, dependencies, tests, rollback. Returns PASS / PASS WITH RECOMMENDATIONS / BLOCK and gates the test run. Uses Claude Opus.",
-      "skill": "skills/code-review.md",
-      "model": "opus",
-      "tools": ["Read", "Glob", "Grep", "LS", "Bash"]
-    }
-  ]
+  "version": "1.2.0",
+  "description": "Reusable workflow agents for command pipelines: test-baseline (regression baseline), risk-planner (Opus), code-review (Opus). Agents are defined in agents/*.md with YAML frontmatter per the Claude Code plugin spec."
 }
