@@ -37,12 +37,14 @@ If **nothing** is ambiguous, skip directly to Phase 2.
 **Codebase exploration** — Before writing the plan, spawn an Explore subagent to map the relevant parts of the codebase:
 
 → Agent (subagent_type: "Explore"):
-  "Given this implementation description: [description from Phase 0 or Phase 1], find and return:
+  "Given this implementation description: [SUBSTITUTE: the full implementation description from Phase 0 or Phase 1], find and return:
    - Relevant source files and their primary responsibility
    - Existing patterns and conventions used in this codebase
    - Test file locations and test naming conventions
    - Naming conventions (class names, method names, file names)
    Return a structured summary — no code changes."
+
+**Wait for the agent's response before proceeding. Do not begin writing the plan until the file map is returned.**
 
 → Use the returned file map as codebase context when writing the plan below.
 
@@ -107,10 +109,11 @@ choices: ["Approve & implement now (Recommended)", "Revise plan", "Cancel"]
    > "Check CLAUDE.md in the project root and ~/.claude/CLAUDE.md (global).
    > The implementation was: [one-sentence summary].
    > Determine if any rules, guidance, or guardrails are missing because of what this implementation revealed.
+   > Skip if: the implementation followed existing patterns with no surprises, required no novel constraints, and introduced no anti-patterns. Only update if a concrete, recurring rule would have prevented a decision point or misunderstanding during this implementation.
    > If YES: apply minimal, additive, scoped changes only — do not rewrite sections wholesale.
    > Return: what was changed and why, OR 'no update required'."
 
-   Collect the three summaries for the Phase 5 report.
+   Collect the three summaries for the Phase 5 report. Then proceed to Phase 4.
 
 ---
 
@@ -159,6 +162,7 @@ Output a structured report — do NOT ask any closing confirmation:
 - NEVER end Phase 3 with "Should I implement?" — if approved, implement
 - NEVER rewrite files wholesale when only an append/edit is needed
 - NEVER skip Phase 3 step 8 — documentation, knowledge, and instructions maintenance is mandatory after every successful impl; always collect summaries for Phase 5
+- ALWAYS spawn Phase 3 step 8 agents in a single message — never sequentially; then proceed to Phase 4
 - NEVER skip Phase 4 — collect step 8 agent summaries even if all three returned "no update required"
 - ALWAYS use `choices` arrays for decision points; last choice is always `"Other… (describe)"`
 - ALWAYS produce the Phase 5 report as the final output
