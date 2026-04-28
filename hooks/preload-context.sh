@@ -39,7 +39,11 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
 else
     echo "(not a git repository)"
 fi
-echo "Directory:"
-ls -1 2>/dev/null | head -20
+# Only inject a short directory listing for small repos (<= 30 entries)
+entry_count=$(ls -1 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$entry_count" -le 30 ]]; then
+    echo "Directory:"
+    ls -1 2>/dev/null | head -20
+fi
 
 exit 0

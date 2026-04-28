@@ -28,7 +28,7 @@ stays on the currently selected model.
 - broad refactoring across multiple modules
 - concurrency, caching, transactions, async processing
 - payment, billing, audit, compliance, or security-sensitive logic
-- changes touching 4 or more non-test files
+- changes touching 4 or more non-test files AND involving non-trivial logic modifications (not just renames, import updates, mechanical refactors, or generated-code changes)
 - unclear requirements or high blast radius
 
 ## Classify as SIMPLE / MODERATE if

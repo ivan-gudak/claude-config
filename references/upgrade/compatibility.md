@@ -116,6 +116,36 @@ For any component pair not covered above:
 
 ---
 
+## Known major migrations
+
+### Spring Boot 2.x → 3.x: `javax.*` → `jakarta.*` namespace migration
+
+Spring Boot 3.0 dropped all `javax.*` packages in favour of `jakarta.*` (Jakarta EE 9+). This affects the entire codebase — every import of a `javax.*` API must be updated.
+
+**Affected namespaces** (non-exhaustive): `javax.servlet`, `javax.persistence`, `javax.validation`, `javax.jms`, `javax.ws.rs` (JAX-RS), `javax.mail`, `javax.annotation`, `javax.inject`, `javax.transaction`.
+
+**Detection:**
+```bash
+grep -rE "import javax\.(servlet|persistence|validation|jms|ws|mail|annotation|inject|transaction)" src/
+```
+
+**Fix:** Bulk rename via IDE refactor or:
+```bash
+find src/ -name "*.java" -exec sed -i 's/import javax\./import jakarta\./g' {} +
+```
+Also update Maven/Gradle BOM imports (`javax.persistence:javax.persistence-api` → `jakarta.persistence:jakarta.persistence-api`, etc.).
+
+**Companion changes that commonly surface:**
+- Hibernate 5 → 6: uses `jakarta.persistence` (not `javax.persistence`)
+- Spring Security 5 → 6: uses `jakarta.servlet` (not `javax.servlet`)
+- `javax.annotation.PostConstruct` / `PreDestroy` → `jakarta.annotation.*`
+- Deployment descriptors (`web.xml`) referencing `javax.*` schemas need updating
+- Third-party libraries still on `javax.*` need replacement versions that ship `jakarta.*`
+
+**Reference:** [Spring Boot 3.0 Migration Guide](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-3.0-Migration-Guide)
+
+---
+
 ## Worked example: `upgrade: gradle` with Java 11 and Spring Boot 2.7 in the repo
 
 1. Fetch all Gradle stable versions from `https://services.gradle.org/versions/all`.

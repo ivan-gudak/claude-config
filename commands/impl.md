@@ -242,7 +242,7 @@ Notable additions/removals: [new commands, APIs, config keys, dependencies — o
 Opus review verdict: [PASS | PASS WITH RECOMMENDATIONS | BLOCK — or "N/A (SIMPLE / MODERATE)"]
 ```
 
-Then spawn all three agents. They are independent and can run in any order — spawn them all before waiting for any to complete:
+Then spawn all four agents. They are independent and can run in any order — spawn them all before waiting for any to complete:
 
 **Agent 1 — Documentation** (general-purpose):
 > "Post-implementation documentation review. Change summary:
@@ -306,6 +306,9 @@ Output a structured report — do NOT ask any closing confirmation:
 
 ### Classification
 [SIMPLE | MODERATE | SIGNIFICANT | HIGH-RISK] — [reason]
+
+### Branch
+[branch name created in Pre-Phase 3, e.g. feat/add-user-authentication]
 
 ### What was implemented
 [High-level summary]

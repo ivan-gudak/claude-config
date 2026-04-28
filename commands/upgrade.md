@@ -108,31 +108,27 @@ All changes are left **uncommitted** on the current branch.
 
 ## Phase 2 — Execution (after user confirms)
 
-**Create feature branch** — Before any other step:
+### Phase 2 prep (once)
 
-1. Run `git status --porcelain`. If the output is non-empty:
-   - Show the user what is dirty.
-   - Ask:
+1. **Create feature branch**
+   - Run `git status --porcelain`. If the output is non-empty:
+     - Show the user what is dirty.
+     - Ask:
+       ```
+       choices: ["Stash changes and continue (Recommended)", "Proceed anyway — pre-existing changes will appear in the diff and review outputs", "Cancel"]
+       ```
+     - **Stash**: `git stash push -m "pre-upgrade stash"`, then continue. **Cancel**: stop.
+   - Generate the branch name:
+     - Single component: `chore/upgrade-<component>-to-<version>` (e.g. `chore/upgrade-springboot-to-3.3.11`)
+     - Multiple components: `chore/upgrade-<first>-and-<N>-more` (e.g. `chore/upgrade-springboot-and-2-more`)
+     - Check `git branch -a` for the project's prefix convention; default to `chore/`.
+   - Check HEAD context: if HEAD is NOT on the default branch and has ahead commits (`git log origin/HEAD..HEAD --oneline 2>/dev/null` is non-empty), ask:
      ```
-     choices: ["Stash changes and continue (Recommended)", "Proceed anyway — pre-existing changes will appear in the diff and review outputs", "Cancel"]
+     choices: ["Branch from current position (Recommended)", "Branch from default branch", "Cancel"]
      ```
-   - **Stash**: `git stash push -m "pre-upgrade stash"`, then continue. **Cancel**: stop.
+   - Run `git checkout -b <branch-name>`. If it already exists, append `-<7-char-sha>`.
 
-2. Generate the branch name:
-   - Single component: `chore/upgrade-<component>-to-<version>` (e.g. `chore/upgrade-springboot-to-3.3.11`)
-   - Multiple components: `chore/upgrade-<first>-and-<N>-more` (e.g. `chore/upgrade-springboot-and-2-more`)
-   - Check `git branch -a` for the project's prefix convention; default to `chore/`.
-
-3. Check HEAD context: if HEAD is NOT on the default branch and has ahead commits (`git log origin/HEAD..HEAD --oneline 2>/dev/null` is non-empty), ask:
-   ```
-   choices: ["Branch from current position (Recommended)", "Branch from default branch", "Cancel"]
-   ```
-
-4. Run `git checkout -b <branch-name>`. If it already exists, append `-<7-char-sha>`.
-
-Process components **one at a time** in order:
-
-1. **Baseline tests** (once, before any changes) — Invoke `general-purpose` with the test-baseline system prompt loaded from file:
+2. **Capture baseline tests** — Invoke `general-purpose` with the test-baseline system prompt loaded from file:
 
    → Agent (subagent_type: "general-purpose"):
      > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
@@ -141,27 +137,29 @@ Process components **one at a time** in order:
      >
      > If neither path exists, warn the user to run `install.sh` and skip the baseline step.
 
-   Store the returned baseline; reuse for all subsequent component comparisons. Do not re-run the baseline for subsequent components — use the snapshot captured here for all comparisons throughout Phase 2.
+   Store the returned baseline; reuse for ALL component comparisons in this Phase 2 run. Do not re-run the baseline per component — this snapshot is captured on the pristine branch, before Agent B changes and component upgrades.
 
-   > **Note on ordering:** The baseline is captured on the pristine repo, before Agent B's workflow changes and before any component upgrades. This ensures it reflects actual pre-change test state.
+3. **Apply Agent B changes** (if Agent B ran in Phase 1 step 3) — Apply the proposed `.github/workflows/` changes from Agent B's report. These are MODERATE changes and do not require a code review gate. Note the files changed in the summary.
 
-2. **Apply Agent B changes** (if Agent B ran in Phase 1 step 3) — Apply the proposed `.github/workflows/` changes from Agent B's report. These are MODERATE changes and do not require a code review gate. Note the files changed in the summary.
+### Per-component loop (for each component, in order)
 
-3. **Detect** — Find the component. See `ecosystems.md`. If not found, warn and skip.
+1. **Detect** — Find the component. See `ecosystems.md`. If not found, warn and skip.
 
-4. **Plan changes** — Identify all files that must change (build files, lock files, wrapper scripts, config, Docker base images, CI YAML — excluding `.github/workflows/` action refs applied in step 2).
+2. **Plan changes** — Identify all files that must change (build files, lock files, wrapper scripts, config, Docker base images, CI YAML — excluding `.github/workflows/` action refs applied in Phase 2 prep step 3).
 
-5. **Apply** — Make the changes per `ecosystems.md` update commands.
+3. **Apply** — Make the changes per `ecosystems.md` update commands.
 
-6. **Companion upgrades** — Apply automatically and note in summary (e.g. Spring Boot major bump may require Hibernate, Mockito).
+4. **Companion upgrades** — Apply automatically and note in summary (e.g. Spring Boot major bump may require Hibernate, Mockito).
 
-7. **Branch on classification:**
+   > **Max depth**: 3 levels of transitive companion upgrades. Track visited components; if a companion upgrade would re-introduce a component already in the visited set at a different version, stop and report the cycle in the summary table (Status = `BLOCKED — companion-cycle`). Do not loop.
 
-   **MODERATE components** → go to step 8 directly (build, then test).
+5. **Branch on classification:**
+
+   **MODERATE components** → go to step 6 directly (build, then test).
 
    **SIGNIFICANT / HIGH-RISK components** → perform an Opus code review BEFORE building/testing:
 
-   a. Capture the diff for this component (and the companion-upgrade diffs applied in step 6). Use `git add -N . && git diff` to include any newly-created untracked files.
+   a. Capture the diff for this component (and the companion-upgrade diffs applied in step 4). Use `git add -N . && git diff` to include any newly-created untracked files.
    b. Spawn the reviewer — `general-purpose` with `model: "opus"` override and the code-review system prompt loaded from file:
       → Agent (subagent_type: "general-purpose", model: "opus"):
         > "Read and adopt the system prompt at `~/.claude/agents/code-review.md`
@@ -174,8 +172,8 @@ Process components **one at a time** in order:
         > Diff: [paste git diff output]
         > Project root: [absolute path]"
    c. Act on the return:
-      - **`### Re-classification` section** — reviewer decided this component is actually `MODERATE`. Surface it, ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel component"]`. If accepted, drop this component to the MODERATE path — treat as implicit PASS, proceed to step 8, skip the re-review on later fix deltas. Record the revised classification for the summary table.
-      - **BLOCK** — invoke the review-fixer agent (see Review-fixer sub-step below). If `Stop condition flag` is `CLEAR`, re-run the Opus code review on the updated diff (one re-review only). If the second verdict is still BLOCK, stop: surface the remaining blockers to the user and ask `choices: ["Investigate further", "Revert this component and skip it", "Cancel"]`. Do NOT proceed to step 8 until verdict is not BLOCK.
+      - **`### Re-classification` section** — reviewer decided this component is actually `MODERATE`. Surface it, ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel component"]`. If accepted, drop this component to the MODERATE path — treat as implicit PASS, proceed to step 6, skip the re-review on later fix deltas. Record the revised classification for the summary table.
+      - **BLOCK** — invoke the review-fixer agent (see Review-fixer sub-step below). If `Stop condition flag` is `CLEAR`, re-run the Opus code review on the updated diff (one re-review only). If the second verdict is still BLOCK, stop: surface the remaining blockers to the user and ask `choices: ["Investigate further", "Revert this component and skip it", "Cancel"]`. Do NOT proceed to step 6 until verdict is not BLOCK.
       - **PASS WITH RECOMMENDATIONS** — invoke the review-fixer agent for MAJOR findings (see Review-fixer sub-step below). MINOR / NIT may be deferred.
       - **PASS** — proceed.
 
@@ -193,19 +191,19 @@ Process components **one at a time** in order:
 
       Wait for the fix report. Re-capture the diff after the fixer completes.
 
-8. **Build** — Run the build command (no tests yet). If build fails, see "Handling build failures".
+6. **Build** — Run the build command (no tests yet). If build fails, see "Handling build failures".
 
-9. **Test** — Run full test suite.
+7. **Test** — Run full test suite.
 
-10. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in step 1:
-    > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
-    > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
-    > Run in **verify** mode. Baseline: [paste the captured baseline block]."
+8. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Phase 2 prep step 2:
+   > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
+   > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
+   > Run in **verify** mode. Baseline: [paste the captured baseline block]."
 
-    Act on the verify report:
-    - If `Regressions` or `Missing from run` lists any tests: see "Handling test failures"
-    - If `Comparison status: invalid`: warn the user and ask for manual review before continuing
-    - If fixes were applied and the component was STILL classified SIGNIFICANT / HIGH-RISK after step 7 (i.e. was NOT down-classified by the reviewer), re-invoke the Opus code review on the delta before re-running tests. If it was down-classified, skip the re-review.
+   Act on the verify report:
+   - If `Regressions` or `Missing from run` lists any tests: see "Handling test failures"
+   - If `Comparison status: invalid`: warn the user and ask for manual review before continuing
+   - If fixes were applied and the component was STILL classified SIGNIFICANT / HIGH-RISK after step 5 (i.e. was NOT down-classified by the reviewer), re-invoke the Opus code review on the delta before re-running tests. If it was down-classified, skip the re-review.
 
 After all components: print the summary table (Output section). Then invoke the session-maintenance agent.
 
@@ -265,7 +263,8 @@ Tests: 142 passed, 0 regressions (baseline: 142 passing)
 - NEVER modify any files during Phase 1 (Agent B must return a proposed change list, not apply changes)
 - NEVER touch any file before creating and checking out the upgrade branch (Phase 2 pre-steps)
 - ALWAYS check for a clean working tree before branching; stash or get explicit user consent if dirty
-- ALWAYS capture the baseline in Phase 2 step 1 BEFORE applying any changes (Agent B or component upgrades)
+- ALWAYS capture the baseline in Phase 2 prep step 2 (before Agent B and component changes)
 - ALWAYS include the classification column in the final summary table
 - ALWAYS compare against the Baseline captured once at the start of Phase 2 — use verify mode from test-baseline agent
+- NEVER follow a companion-upgrade chain deeper than 3 levels; treat as a cycle and surface to the summary table
 - AFTER one review-fixer pass + one re-review, if verdict is still BLOCK: stop and surface to user — do NOT loop

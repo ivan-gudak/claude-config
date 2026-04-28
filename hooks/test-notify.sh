@@ -35,11 +35,12 @@ if ! echo "$command" | grep -qE '(mvn test|gradlew test|gradle test|npm test|yar
 fi
 
 # Parse result using python3 (portable — no grep -P)
-summary=$(python3 - "$command" "$output" 2>/dev/null <<'PYEOF'
+# $output is piped via stdin to avoid ARG_MAX limits on large test outputs.
+summary=$(printf '%s' "$output" | python3 - "$command" 2>/dev/null <<'PYEOF'
 import sys, re
 
 cmd = sys.argv[1] if len(sys.argv) > 1 else ""
-out = sys.argv[2] if len(sys.argv) > 2 else ""
+out = sys.stdin.read()
 
 def first(pattern, text, default="0"):
     m = re.findall(pattern, text)

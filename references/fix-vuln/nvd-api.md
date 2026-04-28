@@ -39,8 +39,16 @@ cpe:2.3:a:<vendor>:<product>:<version>:...
 ## Deriving the safe version
 
 1. Collect all `cpeMatch` entries where `vulnerable == true`.
-2. The safe version is the value in `versionEndExcluding` (if present), or one patch above `versionEndIncluding`.
-3. If multiple ranges exist, find the patch/minor version immediately above the highest upper bound.
+2. For `versionEndExcluding` (exclusive upper bound): that value **is** the safe version floor.
+3. For `versionEndIncluding` (inclusive upper bound, no exclusive upper bound given): the safe floor is one patch above. If the version has a non-numeric suffix (`.Final`, `-RELEASE`, `-RC1`), bump the numeric core and preserve the suffix.
+
+   Examples for non-standard version schemes:
+   - `2.14.3.Final` → safe floor: `2.14.4.Final` (Hibernate-style suffix)
+   - `1.2.3-RELEASE` → safe floor: `1.2.4-RELEASE` (Spring-style suffix)
+
+4. If multiple ranges exist, do **not** take the highest `versionEndExcluding` across all ranges. Instead, find the range whose `versionStartIncluding`–`versionEndExcluding` window contains the project's current version, and use that range's upper bound as the safe floor. Taking the globally highest bound may push a `5.15.x` project to `5.16.7` when `5.15.16` is the correct fix.
+
+   Example: a project on `5.15.3` with ranges `[5.0.0, 5.15.16)` and `[5.16.0, 5.16.7)` — the matching range is the first one, so the safe floor is `5.15.16`.
 
 ## Example: CVE-2023-46604 (Apache ActiveMQ RCE)
 

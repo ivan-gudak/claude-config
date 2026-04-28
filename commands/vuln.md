@@ -135,8 +135,8 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
      > Diff: [paste git diff]
      > Project root: [absolute path]"
 
-4. **Act on the return:**
-   - **`### Re-classification` section** — the reviewer decided the change is actually `MODERATE`. Surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel"]`. If accepted, treat as an implicit PASS and proceed to step 5; do NOT re-invoke code-review on fix deltas. Record the revised classification for the PR body.
+5. **Act on the return:**
+   - **`### Re-classification` section** — the reviewer decided the change is actually `MODERATE`. Surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel"]`. If accepted, treat as an implicit PASS and proceed to step 6; do NOT re-invoke code-review on fix deltas. Record the revised classification for the PR body.
    - **BLOCK** — invoke the review-fixer agent (see Review-fixer sub-step below). If `Stop condition flag` is `CLEAR`, re-run the Opus review on the updated diff (one re-review only). If the second verdict is still BLOCK, stop: surface the remaining blockers to the user and ask `choices: ["Investigate further", "Revert this CVE fix and skip it", "Cancel"]`. Do not run tests until the verdict is not BLOCK.
    - **PASS WITH RECOMMENDATIONS** — invoke the review-fixer agent for MAJOR findings (see Review-fixer sub-step below). MINOR / NIT may be deferred; note them in the PR description.
    - **PASS** — proceed.
@@ -189,8 +189,6 @@ Fixes <CVE-ID> - <one-line CVE description>
 Vulnerable range: <range>
 Safe version: <version>
 Classification: <MODERATE | SIGNIFICANT | HIGH-RISK>
-
-Co-authored-by: Claude Code <noreply@anthropic.com>
 ```
 
 Omit the `Resolves` line when there is no Jira ID.
