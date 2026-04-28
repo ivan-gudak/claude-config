@@ -38,7 +38,7 @@ for cmd in impl.md vuln.md upgrade.md; do
     remove_if_our_symlink "$CLAUDE_DIR/commands/$cmd"
 done
 
-for agent in test-baseline.md risk-planner.md code-review.md; do
+for agent in test-baseline.md risk-planner.md code-review.md review-fixer.md impl-maintenance.md; do
     remove_if_our_symlink "$CLAUDE_DIR/agents/$agent"
 done
 

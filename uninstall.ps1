@@ -63,7 +63,7 @@ foreach ($cmd in @('impl.md', 'vuln.md', 'upgrade.md')) {
     Remove-IfOurs (Join-Path $ClaudeDir "commands\$cmd")
 }
 
-foreach ($agent in @('test-baseline.md', 'risk-planner.md', 'code-review.md')) {
+foreach ($agent in @('test-baseline.md', 'risk-planner.md', 'code-review.md', 'review-fixer.md', 'impl-maintenance.md')) {
     Remove-IfOurs (Join-Path $ClaudeDir "agents\$agent")
 }
 

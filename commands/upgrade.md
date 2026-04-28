@@ -108,6 +108,28 @@ All changes are left **uncommitted** on the current branch.
 
 ## Phase 2 — Execution (after user confirms)
 
+**Create feature branch** — Before any other step:
+
+1. Run `git status --porcelain`. If the output is non-empty:
+   - Show the user what is dirty.
+   - Ask:
+     ```
+     choices: ["Stash changes and continue (Recommended)", "Proceed anyway — pre-existing changes will appear in the diff and review outputs", "Cancel"]
+     ```
+   - **Stash**: `git stash push -m "pre-upgrade stash"`, then continue. **Cancel**: stop.
+
+2. Generate the branch name:
+   - Single component: `chore/upgrade-<component>-to-<version>` (e.g. `chore/upgrade-springboot-to-3.3.11`)
+   - Multiple components: `chore/upgrade-<first>-and-<N>-more` (e.g. `chore/upgrade-springboot-and-2-more`)
+   - Check `git branch -a` for the project's prefix convention; default to `chore/`.
+
+3. Check HEAD context: if HEAD is NOT on the default branch and has ahead commits (`git log origin/HEAD..HEAD --oneline 2>/dev/null` is non-empty), ask:
+   ```
+   choices: ["Branch from current position (Recommended)", "Branch from default branch", "Cancel"]
+   ```
+
+4. Run `git checkout -b <branch-name>`. If it already exists, append `-<7-char-sha>`.
+
 Process components **one at a time** in order:
 
 1. **Baseline tests** (once, before any changes) — Invoke `general-purpose` with the test-baseline system prompt loaded from file:
@@ -153,9 +175,23 @@ Process components **one at a time** in order:
         > Project root: [absolute path]"
    c. Act on the return:
       - **`### Re-classification` section** — reviewer decided this component is actually `MODERATE`. Surface it, ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel component"]`. If accepted, drop this component to the MODERATE path — treat as implicit PASS, proceed to step 8, skip the re-review on later fix deltas. Record the revised classification for the summary table.
-      - **BLOCK** — fix the blocking findings (current model or Sonnet), re-capture the diff, re-run the review. Do NOT proceed to step 8 until verdict is not BLOCK.
-      - **PASS WITH RECOMMENDATIONS** — apply MAJOR findings in the same change before running tests; MINOR / NIT may be deferred.
+      - **BLOCK** — invoke the review-fixer agent (see Review-fixer sub-step below). If `Stop condition flag` is `CLEAR`, re-run the Opus code review on the updated diff (one re-review only). If the second verdict is still BLOCK, stop: surface the remaining blockers to the user and ask `choices: ["Investigate further", "Revert this component and skip it", "Cancel"]`. Do NOT proceed to step 8 until verdict is not BLOCK.
+      - **PASS WITH RECOMMENDATIONS** — invoke the review-fixer agent for MAJOR findings (see Review-fixer sub-step below). MINOR / NIT may be deferred.
       - **PASS** — proceed.
+
+      **Review-fixer sub-step** (for BLOCK and PASS WITH RECOMMENDATIONS):
+
+      → Agent (subagent_type: "general-purpose"):
+        > "Read and adopt the system prompt at `~/.claude/agents/review-fixer.md`
+        > (fall back to `~/.claude/claude-config/agents/review-fixer.md` if absent).
+        > Then fix the review findings for this brief:
+        >
+        > Task description: Upgrade [component] from [current] to [target].
+        > Review output: [paste the full code-review agent output]
+        > Project root: [absolute path]
+        > Severities to fix: BLOCKER and MAJOR"
+
+      Wait for the fix report. Re-capture the diff after the fixer completes.
 
 8. **Build** — Run the build command (no tests yet). If build fails, see "Handling build failures".
 
@@ -171,7 +207,23 @@ Process components **one at a time** in order:
     - If `Comparison status: invalid`: warn the user and ask for manual review before continuing
     - If fixes were applied and the component was STILL classified SIGNIFICANT / HIGH-RISK after step 7 (i.e. was NOT down-classified by the reviewer), re-invoke the Opus code review on the delta before re-running tests. If it was down-classified, skip the re-review.
 
-After all components: print the summary table (Output section).
+After all components: print the summary table (Output section). Then invoke the session-maintenance agent.
+
+### Post-batch maintenance
+
+→ Agent (subagent_type: "general-purpose"):
+  > "Read and adopt the system prompt at `~/.claude/agents/impl-maintenance.md`
+  > (fall back to `~/.claude/claude-config/agents/impl-maintenance.md` if absent).
+  > Then analyse this session and return a Lessons Learned report.
+  >
+  > Session handoff:
+  > - What was done: [summary: N components upgraded — list each component, from→to, classification, outcome (OK/SKIPPED/BLOCKED)]
+  > - Key events: [BLOCK reviews and their reasons, test regressions, build failures, workarounds, compatibility surprises, missing reference docs — or 'none']
+  > - Workarounds used: [manual steps not automated — or 'none']
+  > - Overall result: [N upgraded, N skipped, N blocked]
+  > - Project root: [absolute path]"
+
+Include the Lessons Learned report after the summary table.
 
 ### Handling Test Failures
 
@@ -211,6 +263,9 @@ Tests: 142 passed, 0 regressions (baseline: 142 passing)
 - NEVER use Opus for a MODERATE component upgrade unless the user explicitly requests it
 - NEVER run tests on a SIGNIFICANT / HIGH-RISK component before the Opus code review returns a non-BLOCK verdict
 - NEVER modify any files during Phase 1 (Agent B must return a proposed change list, not apply changes)
+- NEVER touch any file before creating and checking out the upgrade branch (Phase 2 pre-steps)
+- ALWAYS check for a clean working tree before branching; stash or get explicit user consent if dirty
 - ALWAYS capture the baseline in Phase 2 step 1 BEFORE applying any changes (Agent B or component upgrades)
 - ALWAYS include the classification column in the final summary table
 - ALWAYS compare against the Baseline captured once at the start of Phase 2 — use verify mode from test-baseline agent
+- AFTER one review-fixer pass + one re-review, if verdict is still BLOCK: stop and surface to user — do NOT loop

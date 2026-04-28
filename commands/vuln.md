@@ -73,16 +73,25 @@ For each vulnerability token:
 
 For CVEs classified `MODERATE`, fix one at a time:
 
-1. **Fix** — Apply the minimal version change (patch/minor).
-2. **Verify** — Build the project. (Tests come after — see step 4 below.)
-3. **Run tests** — Re-run the test suite.
-4. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Research step 3:
+1. **Create branch** — Before touching any file:
+   - Run `git status --porcelain`. If dirty, ask:
+     ```
+     choices: ["Stash changes and continue (Recommended)", "Proceed anyway — pre-existing changes will appear in the diff and PR", "Cancel"]
+     ```
+     If Stash: `git stash push -m "pre-fix stash"`. If Cancel: skip this CVE.
+   - Determine branch name (see **Git Workflow** section below for naming rules).
+   - Run `git checkout -b <branch-name>`. If the branch already exists, append `-<7-char-sha>`.
+
+2. **Fix** — Apply the minimal version change (patch/minor).
+3. **Verify** — Build the project. (Tests come after — see step 5 below.)
+4. **Run tests** — Re-run the test suite.
+5. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Research step 3:
    > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
    > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
    > Run in **verify** mode. Baseline: [paste the captured baseline block]."
 
    If `Regressions` or `Missing from run` lists any tests: present them clearly and ask the user to choose — proceed anyway, revert, or investigate further.
-5. **Commit & PR** — See the Git Workflow section.
+6. **Commit & PR** — See the Git Workflow section.
 
 ---
 
@@ -90,7 +99,9 @@ For CVEs classified `MODERATE`, fix one at a time:
 
 For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
-1. **Plan with Opus** — Invoke `general-purpose` with `model: "opus"` override and the risk-planner system prompt loaded from file. The planner will do its own usage-site scan — the Detect agent only returned declaration paths, not import sites.
+1. **Create branch** — Same rules as the MODERATE path step 1: clean-tree check → stash/proceed/cancel → `git checkout -b <branch-name>`.
+
+2. **Plan with Opus** — Invoke `general-purpose` with `model: "opus"` override and the risk-planner system prompt loaded from file. The planner will do its own usage-site scan — the Detect agent only returned declaration paths, not import sites.
 
    → Agent (subagent_type: "general-purpose", model: "opus"):
      > "Read and adopt the system prompt at `~/.claude/agents/risk-planner.md`
@@ -109,9 +120,9 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
    Otherwise, present the plan to the user and ask for approval before touching files.
 
-2. **Apply the fix** — With current model or Sonnet. Version bump + any code changes per the plan. No tests yet.
+3. **Apply the fix** — With current model or Sonnet. Version bump + any code changes per the plan. No tests yet.
 
-3. **Opus code review** — Capture the full diff for this CVE fix. Use `git add -N . && git diff` (this includes intent-to-add untracked new files; unlike bare `git diff`, it won't produce an empty diff for implementations that only create new files). Then invoke `general-purpose` with `model: "opus"` override and the code-review system prompt loaded from file:
+4. **Opus code review** — Capture the full diff for this CVE fix. Use `git add -N . && git diff` (this includes intent-to-add untracked new files; unlike bare `git diff`, it won't produce an empty diff for implementations that only create new files). Then invoke `general-purpose` with `model: "opus"` override and the code-review system prompt loaded from file:
 
    → Agent (subagent_type: "general-purpose", model: "opus"):
      > "Read and adopt the system prompt at `~/.claude/agents/code-review.md`
@@ -126,13 +137,27 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
 4. **Act on the return:**
    - **`### Re-classification` section** — the reviewer decided the change is actually `MODERATE`. Surface it and ask `choices: ["Accept revised classification (Recommended)", "Override and keep BLOCK-gated review", "Cancel"]`. If accepted, treat as an implicit PASS and proceed to step 5; do NOT re-invoke code-review on fix deltas. Record the revised classification for the PR body.
-   - **BLOCK** — fix the blocking findings (current model or Sonnet), re-capture the diff, re-run the review. Do not run tests until the verdict is not BLOCK.
-   - **PASS WITH RECOMMENDATIONS** — apply MAJOR findings before running tests. MINOR / NIT may be deferred; note them in the PR description.
+   - **BLOCK** — invoke the review-fixer agent (see Review-fixer sub-step below). If `Stop condition flag` is `CLEAR`, re-run the Opus review on the updated diff (one re-review only). If the second verdict is still BLOCK, stop: surface the remaining blockers to the user and ask `choices: ["Investigate further", "Revert this CVE fix and skip it", "Cancel"]`. Do not run tests until the verdict is not BLOCK.
+   - **PASS WITH RECOMMENDATIONS** — invoke the review-fixer agent for MAJOR findings (see Review-fixer sub-step below). MINOR / NIT may be deferred; note them in the PR description.
    - **PASS** — proceed.
 
-5. **Build & run tests** — Build the project; re-run the test suite.
+   **Review-fixer sub-step** (for BLOCK and PASS WITH RECOMMENDATIONS):
 
-6. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Round A of step 3:
+   → Agent (subagent_type: "general-purpose"):
+     > "Read and adopt the system prompt at `~/.claude/agents/review-fixer.md`
+     > (fall back to `~/.claude/claude-config/agents/review-fixer.md` if absent).
+     > Then fix the review findings for this brief:
+     >
+     > Task description: Remediate [CVE-ID] — upgrade [library] from [current] to [target].
+     > Review output: [paste the full code-review agent output]
+     > Project root: [absolute path]
+     > Severities to fix: BLOCKER and MAJOR"
+
+   Wait for the fix report. Re-capture the diff after the fixer completes.
+
+6. **Build & run tests** — Build the project; re-run the test suite.
+
+7. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Round A of research step 3:
    > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
    > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
    > Run in **verify** mode. Baseline: [paste the captured baseline block]."
@@ -140,9 +165,9 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
    Act on the verify report:
    - If `Regressions` or `Missing from run` lists any tests: present them clearly and ask the user to choose — proceed anyway, revert, or investigate further
    - If `Comparison status: invalid`: warn the user and ask for manual review before continuing
-   - If fixes were applied in response to failures, re-run tests; if the fixes were non-trivial AND the reviewer was NOT down-classified in step 4, re-invoke the Opus review on the delta. If it was down-classified, skip the re-review.
+   - If fixes were applied in response to failures, re-run tests; if the fixes were non-trivial AND the reviewer was NOT down-classified in step 5, re-invoke the Opus review on the delta. If it was down-classified, skip the re-review.
 
-7. **Commit & PR** — See the Git Workflow section. Include the review verdict in the PR body.
+8. **Commit & PR** — See the Git Workflow section. Include the review verdict in the PR body.
 
 ---
 
@@ -193,10 +218,33 @@ Honor the user's choice.
 
 ---
 
+## Post-batch maintenance
+
+After all CVEs in the batch have been processed (fixed, committed, and PRed — or explicitly skipped), invoke the session-maintenance agent:
+
+→ Agent (subagent_type: "general-purpose"):
+  > "Read and adopt the system prompt at `~/.claude/agents/impl-maintenance.md`
+  > (fall back to `~/.claude/claude-config/agents/impl-maintenance.md` if absent).
+  > Then analyse this session and return a Lessons Learned report.
+  >
+  > Session handoff:
+  > - What was done: [summary: N CVEs processed — list each CVE-ID, library, classification, outcome (fixed/skipped/blocked)]
+  > - Key events: [BLOCK reviews and their reason, test regressions, workarounds needed, NVD lookup failures, Detect failures, missing reference docs — or 'none']
+  > - Workarounds used: [manual steps not automated — or 'none']
+  > - Overall result: [N fixed, N skipped, N blocked]
+  > - Project root: [absolute path]"
+
+Include the Lessons Learned report in the final batch summary.
+
+---
+
 ## Invariants (always enforced)
 
-- NEVER skip classification (step 5) — every CVE fix must be labelled
+- NEVER skip classification (step 5 of the research phase) — every CVE fix must be labelled
 - NEVER use Opus for a MODERATE fix unless the user explicitly requests it
 - NEVER run the test suite on a SIGNIFICANT / HIGH-RISK fix before the Opus code review returns a non-BLOCK verdict
+- NEVER touch any file before creating and checking out the per-CVE branch
+- ALWAYS check for a clean working tree before branching; stash or get explicit user consent if dirty
 - ALWAYS include the classification in the commit message and PR body
 - ALWAYS compare against the Baseline agent's results — a regression is only real vs. the pre-change baseline
+- AFTER one review-fixer pass + one re-review, if verdict is still BLOCK: stop and surface to user — do NOT loop

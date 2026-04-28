@@ -133,6 +133,33 @@ choices: ["Approve & implement now (Recommended)", "Revise plan", "Cancel"]
 
 ---
 
+## Pre-Phase 3 — Create feature branch
+
+Before writing any file:
+
+1. **Clean-tree check** — Run `git status --porcelain`. If the output is non-empty:
+   - Show the user what is dirty (paste the `git status --short` output).
+   - Ask:
+     ```
+     choices: ["Stash changes and continue (Recommended)", "Proceed anyway — pre-existing changes will appear in the diff and review outputs", "Cancel"]
+     ```
+   - **Stash**: run `git stash push -m "pre-impl stash"`, then continue.
+   - **Proceed**: note in the Phase 5 report that the working tree was dirty at implementation start.
+   - **Cancel**: stop and summarize what was planned.
+
+2. **Detect naming convention** — check `git branch -a` for the project's branch prefix (`feat/`, `feature/`, `chore/`, `story/`, etc.). Default to `feat/` if ambiguous.
+
+3. **Generate slug** — derive from the implementation description: lowercase, hyphens, max 40 chars, strip punctuation and special chars. Example: "Add user authentication to login page" → `add-user-authentication-login-page`.
+
+4. **Check HEAD context** — if HEAD is NOT on the default branch (`main` / `master` / `develop`), check for ahead commits: `git log origin/HEAD..HEAD --oneline 2>/dev/null`. If output is non-empty (branch has commits ahead), ask:
+   ```
+   choices: ["Branch from current position — continue on this work (Recommended)", "Branch from default branch — fresh start", "Cancel"]
+   ```
+
+5. **Create and checkout** — `git checkout -b <prefix>/<slug>`. If that name already exists, append the first 7 chars of HEAD's SHA: `<prefix>/<slug>-<short-sha>`.
+
+---
+
 ## Phase 3A — Implementation (SIMPLE / MODERATE)
 
 **Implement immediately. Do NOT ask "Should I implement?" or any variation.**
@@ -174,9 +201,23 @@ Use the currently selected model or Sonnet for implementation itself. Opus is re
 
 7. Act on the return:
    - **`### Re-classification` section** — the reviewer decided the change is actually `SIMPLE` or `MODERATE` on inspection. Surface it to the user and ask `choices: ["Accept revised classification (Recommended)", "Override and keep the BLOCK-gated review", "Cancel"]`. If accepted, treat the review as an implicit PASS: skip the BLOCK branch, proceed to step 8, and do NOT re-invoke the reviewer on later fix deltas. Record the revised classification for the Phase 5 report. If overridden, re-invoke code-review with an explicit note that the classification is intentional.
-   - **BLOCK** — fix the blocking findings with the current model or Sonnet. Re-run the Opus review with the updated diff. Do not run tests until the verdict is not BLOCK.
-   - **PASS WITH RECOMMENDATIONS** — apply any MAJOR findings in the same change before running tests. MINOR / NIT findings may be deferred — note them in the Phase 5 report.
+   - **BLOCK** — invoke the review-fixer agent (see Review-fixer sub-step below). If `Stop condition flag` is `CLEAR`, re-run the Opus code review on the updated diff (one re-review only). If the second verdict is still BLOCK, stop: surface the remaining blockers to the user and ask `choices: ["Investigate further", "Abandon implementation and restore to pre-impl state", "Cancel"]`. Do not run tests until the verdict is not BLOCK.
+   - **PASS WITH RECOMMENDATIONS** — invoke the review-fixer agent for MAJOR findings (see Review-fixer sub-step below). MINOR / NIT findings may be deferred — note them in the Phase 5 report.
    - **PASS** — proceed.
+
+   **Review-fixer sub-step** (for BLOCK and PASS WITH RECOMMENDATIONS):
+
+   → Agent (subagent_type: "general-purpose"):
+     > "Read and adopt the system prompt at `~/.claude/agents/review-fixer.md`
+     > (fall back to `~/.claude/claude-config/agents/review-fixer.md` if absent).
+     > Then fix the review findings for this brief:
+     >
+     > Task description: [substitute full description]
+     > Review output: [paste the full code-review agent output]
+     > Project root: [absolute path]
+     > Severities to fix: BLOCKER and MAJOR"
+
+   Wait for the fix report. Re-capture the diff after the fixer completes.
 8. Run relevant linters, builds, and tests.
 9. Fix any failures caused by your changes (current model or Sonnet).
 10. If fixes were applied, re-run tests. If the fixes were non-trivial and the reviewer was NOT down-classified in step 7, re-invoke the Opus review on the delta. If the reviewer WAS down-classified, skip the re-review.
@@ -239,7 +280,20 @@ Then spawn all three agents. They are independent and can run in any order — s
 > If YES: apply minimal, additive, scoped changes only — do not rewrite sections wholesale.
 > Return: what was changed and why, OR 'no update required'."
 
-Collect the three summaries for the Phase 5 report.
+**Agent 4 — Session maintenance** (general-purpose):
+> "Read and adopt the system prompt at `~/.claude/agents/impl-maintenance.md`
+> (fall back to `~/.claude/claude-config/agents/impl-maintenance.md` if absent).
+> Then analyse this session and return a Lessons Learned report.
+>
+> Session handoff:
+> - What was done: [one-paragraph summary of the implementation]
+> - Key events: [BLOCK reviews encountered and their reason, test regressions, workarounds, unexpected ambiguities — or 'none']
+> - Workarounds used: [manual steps not automated by the workflow — or 'none']
+> - Review verdict: [PASS | PASS WITH RECOMMENDATIONS | BLOCK | N/A]
+> - Test result: [passed N tests, N regressions, not run — or actual result]
+> - Project root: [absolute path]"
+
+Collect all four summaries for the Phase 5 report.
 
 ---
 
@@ -274,6 +328,9 @@ Output a structured report — do NOT ask any closing confirmation:
 ### Documentation
 - [file updated] — [what was added/changed] OR "no update required (bug fix / no user-facing change)" OR "no documentation files found"
 
+### Session learnings
+- [top suggestions from impl-maintenance agent, or "no suggestions — routine session"]
+
 ### Assumptions & limitations
 - [list any]
 
@@ -291,7 +348,10 @@ Output a structured report — do NOT ask any closing confirmation:
 - NEVER make assumptions that could have been asked — ask instead
 - NEVER end implementation with "Should I implement?" — if approved, implement
 - NEVER rewrite files wholesale when only an append/edit is needed
-- NEVER skip Phase 4 — documentation, knowledge, and instructions maintenance is mandatory after every successful impl; always collect summaries for Phase 5
+- NEVER skip Phase 4 — documentation, knowledge, instructions, and session-maintenance are mandatory after every successful impl; always collect all four agent summaries for Phase 5
+- ALWAYS create a feature branch (Pre-Phase 3) before writing any file — never implement directly on the default branch
+- ALWAYS check for a clean working tree before branching; stash or get explicit user consent if dirty
 - ALWAYS spawn Phase 4 agents in a single message — never sequentially
 - ALWAYS use `choices` arrays for decision points; last choice is always `"Other… (describe)"`
 - ALWAYS produce the Phase 5 report as the final output
+- AFTER one review-fixer pass + one re-review, if verdict is still BLOCK: stop and surface to user — do NOT loop

@@ -90,7 +90,7 @@ foreach ($cmd in @('impl.md', 'vuln.md', 'upgrade.md')) {
 # required marketplace registration Claude Code's local-dir discovery does not
 # support.
 
-foreach ($agent in @('test-baseline.md', 'risk-planner.md', 'code-review.md')) {
+foreach ($agent in @('test-baseline.md', 'risk-planner.md', 'code-review.md', 'review-fixer.md', 'impl-maintenance.md')) {
     $src = Join-Path $ScriptDir "agents\$agent"
     $dst = Join-Path $AgentsDir $agent
     Install-FileLink -Target $src -LinkPath $dst

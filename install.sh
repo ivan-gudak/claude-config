@@ -90,7 +90,7 @@ done
 # Replaces the earlier plugin-based approach, which required marketplace
 # registration Claude Code's local-dir discovery does not support.
 
-for agent in test-baseline.md risk-planner.md code-review.md; do
+for agent in test-baseline.md risk-planner.md code-review.md review-fixer.md impl-maintenance.md; do
     ln -sf "../claude-config/agents/$agent" "$CLAUDE_DIR/agents/$agent"
     printf '  linked agents/%s\n' "$agent"
 done
