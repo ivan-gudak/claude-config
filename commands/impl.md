@@ -54,17 +54,17 @@ Then choose the branch:
 
 ## Phase 2A — Standard Plan (SIMPLE / MODERATE only)
 
-**Codebase exploration** — Before writing the plan, spawn an Explore subagent to map the relevant parts of the codebase:
+**Codebase exploration** — Before writing the plan, spawn an exploration subagent to map the relevant parts of the codebase:
 
-→ Agent (subagent_type: "Explore"):
-  "Given this implementation description: [SUBSTITUTE: the full implementation description from Phase 0 or Phase 1], find and return:
+→ Agent (subagent_type: "general-purpose", tools: Read/Glob/Grep/LS only — no Bash, no Edit):
+  "Given this implementation description: [paste the full implementation description from Phase 0 or Phase 1 here], find and return:
    - Relevant source files and their primary responsibility
    - Existing patterns and conventions used in this codebase
    - Test file locations and test naming conventions
    - Naming conventions (class names, method names, file names)
-   Return a structured summary — no code changes."
+   Return a structured summary — no code changes, no file edits."
 
-**Wait for the agent's response before proceeding. Do not begin writing the plan until the file map is returned.**
+**Wait for the agent's response before proceeding. If the agent returns no relevant files or fails, proceed with the plan using your own file reads to gather context. Do not begin writing the plan until the file map is returned or you have gathered context yourself.**
 
 → Use the returned file map as codebase context when writing the plan below.
 
@@ -93,7 +93,7 @@ choices: ["Approve & implement now (Recommended)", "Revise plan", "Cancel"]
 
 ## Phase 2B — Opus-planned (SIGNIFICANT / HIGH-RISK)
 
-**Codebase exploration** — same Explore subagent call as Phase 2A.
+**Codebase exploration** — same exploration subagent call as Phase 2A (same prompt, same fallback rule).
 
 Once the file map is returned, delegate planning to Opus. Invoke via
 `general-purpose` with an explicit `model: "opus"` override and a "read the
@@ -156,7 +156,7 @@ Use the currently selected model or Sonnet for implementation itself. Opus is re
 2. Make precise, surgical changes — do not modify unrelated code
 3. Follow existing code style and LF line endings
 4. If a **new ambiguity** emerges mid-implementation: STOP, ask with choices (last: `"Other… (describe)"`), resume after answer
-5. After all changes are written: **DO NOT run tests yet.** Capture `git diff` (or `git diff --stat` + per-file diffs) and the project root.
+5. After all changes are written: **DO NOT run tests yet.** Capture the diff and the project root. Use `git add -N . && git diff` — this includes intent-to-add untracked new files so the diff is never empty for implementations that only create new files. Also capture `git diff --stat` for the summary.
 6. **Opus code review** — spawn. As with Phase 2B, invoke `general-purpose` with
    an explicit `model: "opus"` override and a "read the system prompt from file"
    instruction so the routing works independently of agent auto-discovery.
@@ -201,7 +201,7 @@ Notable additions/removals: [new commands, APIs, config keys, dependencies — o
 Opus review verdict: [PASS | PASS WITH RECOMMENDATIONS | BLOCK — or "N/A (SIMPLE / MODERATE)"]
 ```
 
-Then spawn all three agents simultaneously in a single message, passing the full change summary block to each:
+Then spawn all three agents. They are independent and can run in any order — spawn them all before waiting for any to complete:
 
 **Agent 1 — Documentation** (general-purpose):
 > "Post-implementation documentation review. Change summary:

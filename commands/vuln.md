@@ -1,6 +1,6 @@
 Fix security vulnerabilities: $ARGUMENTS
 
-Each argument token is either `JIRA-ID:CVE-ID` (e.g. `MGD-2423:CVE-2023-46604`) or a bare `CVE-ID` (e.g. `CVE-2023-46604`). Parse and filter each token (steps 1–2), then research all CVEs in parallel (step 3) before applying fixes sequentially (steps 5 onward).
+Each argument token is either `JIRA-ID:CVE-ID` (e.g. `MGD-2423:CVE-2023-46604`) or a bare `CVE-ID` (e.g. `CVE-2023-46604`). Parse and filter each token (steps 1–2), then research all CVEs in two parallel rounds (step 3) before applying fixes sequentially (steps 5 onward).
 
 Reference files (read when needed):
 - Build system detection: `~/.claude/claude-config/references/fix-vuln/build-systems.md`
@@ -18,33 +18,41 @@ For each vulnerability token:
    - Bare CVE-ID otherwise
    - Determine NOJIRA placeholder once: scan `git log --oneline -50` and `git branch -a` for patterns like `NOJIRA`. Use it in branch names where applicable; omit entirely if history is ambiguous.
 
-2. **Filter** — Skip non-CVE IDs (CWE-*, OWASP `\d{4}:A\d`). Warn and continue.
+2. **Filter** — Skip non-CVE IDs (CWE-*, OWASP `\d{4}:A\d{2}`). Warn and continue.
 
-3. **Research (parallel)** — Before applying any fix, spawn all of the following agents simultaneously in a single message:
+3. **Research — two sequential rounds:**
 
-   **For each CVE-ID remaining after filtering:**
+   **Round A (parallel — no package name needed):**
 
-   - **NVD agent** (general-purpose, needs WebFetch/WebSearch):
+   Spawn all of the following simultaneously in a single message:
+
+   - **NVD agent per CVE-ID** (general-purpose, needs WebFetch/WebSearch):
      > "Fetch CVE details for [CVE-ID] using the NVD API. Reference: `~/.claude/claude-config/references/fix-vuln/nvd-api.md`.
      > Return: affected package name, vulnerable version range, minimum safe version, one-line CVE description."
 
-   - **Detect agent** (Explore):
-     > "Scan this repository for the dependency [package name from the CVE]. Check: pom.xml, build.gradle, build.gradle.kts, package.json, requirements.txt, go.mod, Cargo.toml. Reference: `~/.claude/claude-config/references/fix-vuln/build-systems.md`.
-     > Return: current version in use, file paths where the dependency appears."
-
-   **Once per batch (not per CVE):**
-
-   - **Baseline agent** — invoke via `general-purpose` with the test-baseline
-     system prompt loaded from file, so routing works regardless of agent
-     auto-discovery:
+   - **Baseline agent** (once per batch, not per CVE) — invoke via `general-purpose` with
+     the test-baseline system prompt loaded from file:
      > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
      > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
-     > Then run the full test suite and return the structured baseline result
-     > described there."
+     > Then run in **capture** mode and return the structured baseline result."
+     >
+     > If neither path exists, warn the user to run `install.sh` and skip the baseline step.
 
-   Wait for all agents to complete before proceeding. If the NVD agent cannot determine the package name, use the CVE ID to make a reasonable inference for the Detect agent.
+   **Wait for all Round A agents to complete before proceeding.**
 
-4. **Merge research results** — Combine the parallel agent outputs: CVE details, current library version, safe target version. For each CVE, confirm a fix is needed (current version falls within the vulnerable range). Skip with a warning if the library is not found in the repo.
+   **Round B (parallel — package names now known):**
+
+   For each CVE where the NVD agent returned a package name, spawn a Detect agent. Skip any CVE where NVD failed, flag it individually, and do not block the rest of the batch.
+
+   - **Detect agent per CVE** (general-purpose, needs Read/Glob/Grep/LS tools):
+     > "Scan this repository for the dependency [package name returned by NVD for CVE-ID].
+     > Check all build and manifest files: pom.xml, build.gradle, build.gradle.kts, package.json, requirements.txt, go.mod, Cargo.toml, *.csproj, Gemfile, composer.json.
+     > Reference: `~/.claude/claude-config/references/fix-vuln/build-systems.md`.
+     > Return: current version in use, file paths where the dependency appears."
+
+   **Wait for all Round B agents to complete before proceeding.**
+
+4. **Merge research results** — Combine the agent outputs: CVE details, current library version, safe target version. For each CVE, confirm a fix is needed (current version falls within the vulnerable range). Skip with a warning if the library is not found in the repo. Log NVD-failed CVEs as unresolved.
 
 5. **Classify each CVE fix** — For every CVE that requires a fix, apply the routing rules from `references/model-routing/classification.md`. Decide based on the ACTUAL change required, not the CVE's CVSS score.
 
@@ -68,9 +76,12 @@ For CVEs classified `MODERATE`, fix one at a time:
 1. **Fix** — Apply the minimal version change (patch/minor).
 2. **Verify** — Build the project. (Tests come after — see step 4 below.)
 3. **Run tests** — Re-run the test suite.
-4. **Compare** — Diff before/after test results:
-   - All previously-green tests must stay green
-   - If previously-green tests fail: present them clearly and ask the user to choose — proceed anyway, revert, or investigate further
+4. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Research step 3:
+   > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
+   > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
+   > Run in **verify** mode. Baseline: [paste the captured baseline block]."
+
+   If `Regressions` or `Missing from run` lists any tests: present them clearly and ask the user to choose — proceed anyway, revert, or investigate further.
 5. **Commit & PR** — See the Git Workflow section.
 
 ---
@@ -100,7 +111,7 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
 2. **Apply the fix** — With current model or Sonnet. Version bump + any code changes per the plan. No tests yet.
 
-3. **Opus code review** — Capture the full `git diff` for this CVE fix, then invoke `general-purpose` with `model: "opus"` override and the code-review system prompt loaded from file:
+3. **Opus code review** — Capture the full diff for this CVE fix. Use `git add -N . && git diff` (this includes intent-to-add untracked new files; unlike bare `git diff`, it won't produce an empty diff for implementations that only create new files). Then invoke `general-purpose` with `model: "opus"` override and the code-review system prompt loaded from file:
 
    → Agent (subagent_type: "general-purpose", model: "opus"):
      > "Read and adopt the system prompt at `~/.claude/agents/code-review.md`
@@ -121,9 +132,14 @@ For CVEs classified `SIGNIFICANT` or `HIGH-RISK`, fix one at a time:
 
 5. **Build & run tests** — Build the project; re-run the test suite.
 
-6. **Compare** — Diff before/after against the baseline:
-   - All previously-green tests must stay green
-   - If previously-green tests fail: present them clearly and ask the user to choose — proceed anyway, revert, or investigate further
+6. **Compare** — Invoke `general-purpose` with the test-baseline system prompt in **verify** mode, passing the baseline captured in Round A of step 3:
+   > "Read and adopt the system prompt at `~/.claude/agents/test-baseline.md`
+   > (fall back to `~/.claude/claude-config/agents/test-baseline.md` if absent).
+   > Run in **verify** mode. Baseline: [paste the captured baseline block]."
+
+   Act on the verify report:
+   - If `Regressions` or `Missing from run` lists any tests: present them clearly and ask the user to choose — proceed anyway, revert, or investigate further
+   - If `Comparison status: invalid`: warn the user and ask for manual review before continuing
    - If fixes were applied in response to failures, re-run tests; if the fixes were non-trivial AND the reviewer was NOT down-classified in step 4, re-invoke the Opus review on the delta. If it was down-classified, skip the re-review.
 
 7. **Commit & PR** — See the Git Workflow section. Include the review verdict in the PR body.

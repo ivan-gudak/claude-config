@@ -25,13 +25,13 @@ Multiple ecosystems may coexist (e.g., a Java backend + npm frontend). Check all
 
 Search for the artifact ID in all `*.gradle` and `*.gradle.kts` files:
 
-```powershell
+```bash
 grep -r "activemq" . --include="*.gradle" --include="*.gradle.kts" -l
 ```
 
 Also check `gradle.properties` for version variables:
 
-```powershell
+```bash
 grep -r "activemq" gradle.properties
 ```
 
@@ -62,7 +62,7 @@ For a single module: `./gradlew :<module>:test`
 
 ### Detect library
 
-```powershell
+```bash
 grep -r "activemq" . --include="pom.xml" -l
 ```
 
@@ -89,7 +89,7 @@ mvn test                   # then test
 
 ### Detect library
 
-```powershell
+```bash
 grep -r "\"activemq\"" package.json
 ```
 
@@ -129,7 +129,7 @@ npm test
 
 ### Detect library
 
-```powershell
+```bash
 grep -ri "requests" requirements.txt Pipfile pyproject.toml
 ```
 
@@ -152,7 +152,7 @@ pytest                     # or python -m pytest
 
 ### Detect library
 
-```powershell
+```bash
 grep "activemq" go.mod go.sum
 ```
 
@@ -176,7 +176,7 @@ go test ./...
 
 ### Detect library
 
-```powershell
+```bash
 grep -r "ActiveMQ" . --include="*.csproj" -l
 ```
 
@@ -193,6 +193,52 @@ Or edit `<PackageReference Include="..." Version="...">` in the `.csproj` file.
 ```bash
 dotnet build
 dotnet test
+```
+
+---
+
+## Ruby / Bundler
+
+### Detect library
+
+```bash
+grep -i "<gem_name>" Gemfile Gemfile.lock
+```
+
+### Version sources
+
+1. `Gemfile` — `gem '<name>', '~> x.y'` or `gem '<name>', '>= x.y.z'`
+2. `Gemfile.lock` — pinned resolved version
+
+### Update
+
+Edit the version constraint in `Gemfile`, then:
+
+```bash
+bundle update <gem_name>
+```
+
+Or to update only to the minimum safe version:
+
+```bash
+bundle update <gem_name> --conservative
+```
+
+### Override transitive gem
+
+If the vulnerable gem is a transitive dependency, add an explicit constraint to `Gemfile`:
+
+```ruby
+# Gemfile — force safe version of a transitive dependency
+gem '<gem_name>', '>= <safe-version>'
+```
+
+Then run `bundle update <gem_name>`.
+
+### Verify
+
+```bash
+bundle exec rspec          # or rake test / bundle exec minitest
 ```
 
 ---

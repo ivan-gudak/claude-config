@@ -306,6 +306,45 @@ cargo test
 
 ---
 
+## PHP / Composer
+
+### Detecting a package
+
+```bash
+grep -i '"<package>"' composer.json
+composer show <package> 2>/dev/null | head -5
+```
+
+### Upgrading
+
+```bash
+composer require <package>:<version>        # direct dependency, exact
+composer require "<package>:^<version>"     # allow patch/minor updates
+composer update <package>                   # update within constraint
+```
+
+Or edit `composer.json` manually and run:
+
+```bash
+composer update <package>
+```
+
+### Querying Packagist
+
+```
+GET https://packagist.org/packages/<vendor>/<package>.json
+```
+- `.package.versions` — all published versions (filter stable: no `dev-*`, `-alpha`, `-beta`, `-RC`)
+
+### Build & test
+
+```bash
+composer install
+vendor/bin/phpunit        # or php artisan test for Laravel
+```
+
+---
+
 ## Docker base images
 
 ### Detecting

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Fires at end of every Claude Code turn. Cross-platform completion notification.
 # Always exits 0 — must never block Claude.
-set -euo pipefail
 
 message="Claude Code finished"
 
