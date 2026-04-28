@@ -377,7 +377,7 @@ Works on macOS, Linux, and WSL2 without platform-specific setup.
 
 ## Windows (native PowerShell)
 
-`install.ps1` handles native Windows installation. It creates symlinks for the command files and the plugin, falling back to file copies if symlink creation isn't permitted.
+`install.ps1` handles native Windows installation. It creates symlinks for the command and agent files, falling back to file copies if symlink creation isn't permitted.
 
 **First-time setup:**
 
@@ -411,7 +411,7 @@ cd $env:USERPROFILE\.claude\claude-config
 powershell -ExecutionPolicy Bypass -File uninstall.ps1
 ```
 
-Removes the command and plugin items (whether they were installed as symlinks or copies). If `python` or `python3` is on PATH, also strips the three hook entries from `settings.json` — useful if you previously installed via WSL2's `install.sh`.
+Removes the command and agent items (whether they were installed as symlinks or copies). If `python` or `python3` is on PATH, also strips the three hook entries from `settings.json` — useful if you previously installed via WSL2's `install.sh`.
 
 ### Hooks — not supported on native Windows
 
